@@ -52,7 +52,10 @@ const CODIGOS_ERROR: Record<string, string> = {
 function formatFecha(fecha: string | null): string {
   if (!fecha) return '-'
   try {
-    return new Date(fecha).toLocaleString('es-ES', {
+    const d = new Date(fecha)
+    if (isNaN(d.getTime())) return '-'
+    return d.toLocaleString('es-ES', {
+      timeZone: 'America/Guayaquil',
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -97,6 +100,7 @@ export default function LoteDetalle({
   const [cancelError, setCancelError] = useState('')
   const [descargando, setDescargando] = useState(false)
   const [downloadError, setDownloadError] = useState('')
+  const [refreshError, setRefreshError] = useState<string | null>(null)
 
   const supabase = createClient()
 
@@ -107,41 +111,67 @@ export default function LoteDetalle({
   useEffect(() => {
     if (!esActivo) return
 
-    const interval = setInterval(async () => {
-      const { data: sol } = await supabase
+    let cancelled = false
+
+    async function tick() {
+      if (cancelled) return
+      const { data: sol, error: solError } = await supabase
         .from('solicitudes_lote')
         .select('*')
         .eq('id', currentSolicitud.id)
-        .single()
+        .maybeSingle()
 
-      if (sol) {
-        setCurrentSolicitud(sol)
-        if (sol.perfil) {
-          const { data: est } = await supabase
-            .from('v_estado_ejecuciones')
-            .select('*')
-            .eq('perfil', sol.perfil)
-            .order('creado_en', { ascending: false })
-            .limit(1)
-            .single()
+      if (cancelled) return
+      if (solError) {
+        setRefreshError('No se pudo actualizar')
+        return
+      }
+      if (!sol) return
 
-          if (est) setCurrentEstadoEjecucion(est)
+      setCurrentSolicitud(sol)
 
-          if (sol.ejecucion_id) {
-            const { data: cola } = await supabase
-              .from('cola_trabajo')
-              .select('numero_causa, estado, intentos, ultimo_error')
-              .eq('ejecucion_id', sol.ejecucion_id)
-              .in('estado', ['ERROR_FINAL', 'REVISION', 'SIN_RESULTADOS', 'PARCIAL'])
-              .order('actualizado_en', { ascending: false })
+      if (sol.perfil) {
+        const { data: est, error: estError } = await supabase
+          .from('v_estado_ejecuciones')
+          .select('*')
+          .eq('perfil', sol.perfil)
+          .order('creado_en', { ascending: false })
+          .limit(1)
+          .single()
 
-            if (cola) setCurrentColaErrores(cola as ColaError[])
+        if (cancelled) return
+        if (estError) {
+          setRefreshError('No se pudo actualizar')
+          return
+        }
+        if (est) setCurrentEstadoEjecucion(est)
+
+        if (sol.ejecucion_id) {
+          const { data: cola, error: colaError } = await supabase
+            .from('cola_trabajo')
+            .select('numero_causa, estado, intentos, ultimo_error')
+            .eq('ejecucion_id', sol.ejecucion_id)
+            .in('estado', ['ERROR_FINAL', 'REVISION', 'SIN_RESULTADOS', 'PARCIAL'])
+            .order('actualizado_en', { ascending: false })
+
+          if (cancelled) return
+          if (colaError) {
+            setRefreshError('No se pudo actualizar')
+            return
           }
+          if (cola) setCurrentColaErrores(cola as ColaError[])
         }
       }
+    }
+
+    const interval = setInterval(() => {
+      tick()
     }, 5000)
 
-    return () => clearInterval(interval)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
   }, [esActivo, currentSolicitud.id, supabase])
 
   async function handleCancelar() {
@@ -156,7 +186,13 @@ export default function LoteDetalle({
       return
     }
 
-    setCurrentSolicitud((prev) => ({ ...prev, estado: data as string, cancelar: true }))
+    const nuevoEstado = (data as string) === 'CANCELADA' ? 'CANCELADA' : currentSolicitud.estado
+    setCurrentSolicitud((prev) => ({
+      ...prev,
+      estado: nuevoEstado,
+      cancelar: true,
+      mensaje: nuevoEstado === 'CANCELADA' ? 'Lote cancelado' : 'Cancelación solicitada',
+    }))
     setConfirmarCancelar(false)
     setCancelando(false)
   }
@@ -261,7 +297,7 @@ export default function LoteDetalle({
           <h2 className="mb-4 text-lg font-medium text-gray-900">Avance de la ejecución</h2>
           <div className="space-y-2">
             <div className="flex items-center gap-4">
-              <div className="flex-1 h-3 bg-gray-200 rounded-full overflow-hidden">
+              <div className="flex-1 h-3 bg-gray-200 rounded-full overflow-hidden" role="progressbar" aria-valuenow={avance} aria-valuemin={0} aria-valuemax={100} aria-label="Avance del lote">
                 <div
                   className="h-full bg-blue-600 transition-all duration-500"
                   style={{ width: `${avance}%` }}
@@ -299,7 +335,7 @@ export default function LoteDetalle({
         <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-lg font-medium text-gray-900">Causas con error</h2>
           <div className="overflow-x-auto">
-            <table className="w-full" role="table">
+            <table>
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Número de causa</th>
@@ -309,13 +345,13 @@ export default function LoteDetalle({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {currentColaErrores.map((c, i) => (
-                  <tr key={`${c.numero_causa}-${i}`} className="hover:bg-gray-50">
+                {currentColaErrores.map((c) => (
+                  <tr key={c.numero_causa} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm text-gray-900 font-mono">{c.numero_causa}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{c.estado}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{c.intentos}</td>
                     <td className="px-4 py-3 text-sm text-red-600 max-w-md truncate">
-                      {traducirError(c.ultimo_error) || c.ultimo_error || '-'}
+                      {c.ultimo_error ?? '-'}
                     </td>
                   </tr>
                 ))}
@@ -325,17 +361,25 @@ export default function LoteDetalle({
         </div>
       )}
 
+      {refreshError && (
+        <div className="text-sm text-amber-700 bg-amber-50 p-3 rounded" role="status">
+          {refreshError}
+        </div>
+      )}
+
       <div className="flex items-center gap-4">
-        {esActivo && (
-          <>
-            <button
-              type="button"
-              onClick={() => setConfirmarCancelar(true)}
-              className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-            >
-              Cancelar lote
-            </button>
-          </>
+        {esActivo && !currentSolicitud.cancelar && (
+          <button
+            type="button"
+            onClick={() => setConfirmarCancelar(true)}
+            className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+          >
+            Cancelar lote
+          </button>
+        )}
+
+        {currentSolicitud.cancelar && !estadosActivos.includes(currentSolicitud.estado) && (
+          <span className="text-sm text-gray-600">Cancelación solicitada</span>
         )}
 
         {currentSolicitud.resultado_ruta && (
@@ -358,9 +402,9 @@ export default function LoteDetalle({
       </div>
 
       {confirmarCancelar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">Confirmar cancelación</h3>
+        <dialog className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" open>
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl" role="document" aria-labelledby="cancel-title">
+            <h3 id="cancel-title" className="mb-4 text-lg font-semibold text-gray-900">Confirmar cancelación</h3>
             <p className="mb-6 text-sm text-gray-600">
               ¿Estás seguro de querer cancelar este lote? Se enviará la orden al servicio.
               {currentSolicitud.estado === 'EN_CURSO' && ' El lote ya está en curso, se solicitará la detención.'}
@@ -384,7 +428,7 @@ export default function LoteDetalle({
               </button>
             </div>
           </div>
-        </div>
+        </dialog>
       )}
     </div>
   )

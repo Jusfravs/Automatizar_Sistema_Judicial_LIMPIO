@@ -1,5 +1,5 @@
 export function inicioPorRol(rol: string | null | undefined): string {
-  if (rol === 'admin' || rol === 'usuario') {
+  if (rol && esRolValido(rol)) {
     return '/lotes'
   }
   return '/sin-acceso'

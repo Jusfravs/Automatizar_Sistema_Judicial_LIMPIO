@@ -1,27 +1,27 @@
 import { createClient } from '@/lib/supabase/server'
-import ProtectedLayout from '@/app/protected-layout'
 import { notFound } from 'next/navigation'
 import LoteDetalle from './LoteDetalle'
 import type { Database } from '@/lib/database.types'
 
 type SolicitudRow = Database['public']['Tables']['solicitudes_lote']['Row']
 type EstadoEjecucionRow = Database['public']['Views']['v_estado_ejecuciones']['Row']
-type ColaTrabajoRow = Database['public']['Tables']['cola_trabajo']['Row']
+type ColaTrabajoRow = Pick<Database['public']['Tables']['cola_trabajo']['Row'], 'numero_causa' | 'estado' | 'intentos' | 'ultimo_error'>
 
 type Props = {
   params: Promise<{ id: string }>
 }
 
-async function getSolicitud(id: string): Promise<SolicitudRow | null> {
+async function getSolicitud(id: string): Promise<{ data: SolicitudRow | null; error: Error | null }> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('solicitudes_lote')
     .select('*')
     .eq('id', id)
-    .single()
+    .maybeSingle()
 
-  if (error || !data) return null
-  return data
+  if (error) return { data: null, error }
+  if (!data) return { data: null, error: null }
+  return { data, error: null }
 }
 
 async function getEstadoEjecucion(perfil: string | null): Promise<EstadoEjecucionRow | null> {
@@ -33,13 +33,13 @@ async function getEstadoEjecucion(perfil: string | null): Promise<EstadoEjecucio
     .eq('perfil', perfil)
     .order('creado_en', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
 
   if (error || !data) return null
   return data
 }
 
-async function getColaTrabajoErrores(ejecucionId: string | null): Promise<Pick<ColaTrabajoRow, 'numero_causa' | 'estado' | 'intentos' | 'ultimo_error'>[]> {
+async function getColaTrabajoErrores(ejecucionId: string | null): Promise<ColaTrabajoRow[]> {
   if (!ejecucionId) return []
   const supabase = await createClient()
   const { data, error } = await supabase
@@ -55,23 +55,34 @@ async function getColaTrabajoErrores(ejecucionId: string | null): Promise<Pick<C
 
 export default async function LoteIdPage({ params }: Props) {
   const { id } = await params
-  const solicitud = await getSolicitud(id)
+
+  const solicitudResult = await getSolicitud(id)
+
+  if (solicitudResult.error) {
+    return (
+      <div className="p-6">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
+          Error al cargar el lote
+        </div>
+      </div>
+    )
+  }
+
+  const solicitud = solicitudResult.data
 
   if (!solicitud) notFound()
 
-  const estadoEjecucion = await getEstadoEjecucion(solicitud.perfil)
-  const colaErrores = await getColaTrabajoErrores(solicitud.ejecucion_id)
-
-  const estadosActivos = ['SOLICITADA', 'TOMADA', 'PREPARANDO', 'EN_CURSO']
+  const [estadoEjecucion, colaErrores] = await Promise.all([
+    solicitud.perfil ? getEstadoEjecucion(solicitud.perfil) : Promise.resolve(null),
+    solicitud.ejecucion_id ? getColaTrabajoErrores(solicitud.ejecucion_id) : Promise.resolve([]),
+  ])
 
   return (
-    <ProtectedLayout>
-      <LoteDetalle
-        solicitud={solicitud}
-        estadoEjecucion={estadoEjecucion}
-        colaErrores={colaErrores}
-        estadosActivos={estadosActivos}
-      />
-    </ProtectedLayout>
+    <LoteDetalle
+      solicitud={solicitud}
+      estadoEjecucion={estadoEjecucion}
+      colaErrores={colaErrores}
+      estadosActivos={['SOLICITADA', 'TOMADA', 'PREPARANDO', 'EN_CURSO']}
+    />
   )
 }

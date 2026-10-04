@@ -1,65 +1,28 @@
 import { createClient } from '@/lib/supabase/server'
-import ProtectedLayout from '@/app/protected-layout'
 import Link from 'next/link'
 import type { Database } from '@/lib/database.types'
+import { formatFecha } from '@/lib/fechas'
+import { ESTADO_COLORES, ESTADO_ETIQUETAS, MODO_ETIQUETAS } from '@/lib/lotes'
 
-type SolicitudLote = Database['public']['Tables']['solicitudes_lote']['Row']
+type SolicitudLote = Pick<
+  Database['public']['Tables']['solicitudes_lote']['Row'],
+  'id' | 'archivo_nombre' | 'modo' | 'parametro' | 'trabajadores' | 'estado' | 'creado_en' | 'mensaje'
+>
 
-const ESTADO_COLORES: Record<string, string> = {
-  SOLICITADA: 'bg-yellow-100 text-yellow-800',
-  TOMADA: 'bg-blue-100 text-blue-800',
-  PREPARANDO: 'bg-purple-100 text-purple-800',
-  EN_CURSO: 'bg-indigo-100 text-indigo-800',
-  COMPLETADA: 'bg-green-100 text-green-800',
-  FALLIDA: 'bg-red-100 text-red-800',
-  RECHAZADA: 'bg-red-100 text-red-800',
-  CANCELADA: 'bg-gray-100 text-gray-800',
-}
-
-const ESTADO_ETIQUETAS: Record<string, string> = {
-  SOLICITADA: 'Solicitada',
-  TOMADA: 'Tomada',
-  PREPARANDO: 'Preparando',
-  EN_CURSO: 'En curso',
-  COMPLETADA: 'Completada',
-  FALLIDA: 'Fallida',
-  RECHAZADA: 'Rechazada',
-  CANCELADA: 'Cancelada',
-}
-
-const MODO_ETIQUETAS: Record<string, string> = {
-  solo: 'Una causa',
-  lote: 'Lote de N causas',
-  pendientes: 'Todas las pendientes',
-}
-
-async function getSolicitudes(): Promise<SolicitudLote[]> {
+async function getSolicitudes(): Promise<{ data: SolicitudLote[]; error: string | null }> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('solicitudes_lote')
-    .select('*')
+    .select('id, archivo_nombre, modo, parametro, trabajadores, estado, creado_en, mensaje')
     .order('creado_en', { ascending: false })
+    .limit(100)
 
   if (error) {
     console.error('Error fetching solicitudes:', error)
-    return []
+    return { data: [], error: 'No se pudo cargar la lista de lotes' }
   }
 
-  return data || []
-}
-
-function formatFecha(fecha: string): string {
-  try {
-    return new Date(fecha).toLocaleString('es-ES', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return fecha
-  }
+  return { data: data || [], error: null }
 }
 
 function truncate(str: string | null, max: number): string {
@@ -68,7 +31,7 @@ function truncate(str: string | null, max: number): string {
 }
 
 async function LotesList() {
-  const solicitudes = await getSolicitudes()
+  const { data: solicitudes, error } = await getSolicitudes()
 
   return (
     <div className="space-y-6">
@@ -82,14 +45,20 @@ async function LotesList() {
         </Link>
       </div>
 
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
+          {error}
+        </div>
+      )}
+
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-        {solicitudes.length === 0 ? (
+        {solicitudes.length === 0 && !error ? (
           <div className="p-12 text-center text-gray-500">
             No hay lotes creados. Haz clic en &ldquo;Nuevo lote&rdquo; para empezar.
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full" role="table">
+            <table>
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Archivo</th>
@@ -136,11 +105,5 @@ async function LotesList() {
 }
 
 export default async function LotesPage() {
-  return (
-    <ProtectedLayout>
-      <main className="p-6">
-        <LotesList />
-      </main>
-    </ProtectedLayout>
-  )
+  return <LotesList />
 }
