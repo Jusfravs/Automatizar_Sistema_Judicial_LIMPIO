@@ -68,6 +68,15 @@ class TestMigracionPortalSupabase(unittest.TestCase):
                 "ALTER VIEW public.%s SET (security_invoker = on)" % vista, self.sql
             )
 
+    def test_borrado_de_entradas_solo_propias_y_sin_solicitud(self):
+        sql = (RAIZ / "migrations" / "supabase" / "004_limpieza_entradas.sql").read_text(
+            encoding="utf-8")
+        self.assertIn("FOR DELETE TO authenticated", sql)
+        self.assertIn("owner_id = (SELECT auth.uid())::TEXT", sql)
+        self.assertIn("NOT EXISTS", sql)
+        self.assertIn("'entradas'", sql)
+        self.assertNotRegex(sql, r"(?i)\bDROP\b")
+
     def test_anon_no_recibe_privilegios(self):
         self.assertIn("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon", self.sql)
         self.assertNotRegex(self.sql, r"GRANT [^;]* TO [^;]*\banon\b")
