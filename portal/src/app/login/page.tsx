@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { inicioPorRol } from '@/lib/roles'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -42,19 +43,12 @@ export default function LoginPage() {
       .single()
 
     if (profileError || !profile || !profile.activo) {
-      await supabase.auth.signOut()
       router.push('/sin-acceso')
       router.refresh()
       return
     }
 
-    const redirectMap: Record<string, string> = {
-      gestor_lotes: '/lotes',
-      gestor_casos: '/casos',
-      admin: '/lotes',
-    }
-
-    const redirectTo = redirectMap[profile.rol] || '/lotes'
+    const redirectTo = inicioPorRol(profile.rol)
     router.push(redirectTo)
     router.refresh()
   }

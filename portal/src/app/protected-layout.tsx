@@ -1,14 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { inicioPorRol } from '@/lib/roles'
 
-interface NavBarProps {
-  children: React.ReactNode
-  userRole: string
-  userName: string
-}
-
-async function NavBar({ children, userRole, userName }: NavBarProps) {
+function NavBar({ children, userRole, userName }: { children: React.ReactNode; userRole: string; userName: string }) {
   const roleLabels: Record<string, string> = {
     gestor_lotes: 'Gestor de Lotes',
     gestor_casos: 'Gestor de Casos',
@@ -27,42 +22,35 @@ async function NavBar({ children, userRole, userName }: NavBarProps) {
   const userMenu = menuItems[userRole] || []
 
   return (
-    <header className="border-b border-gray-200 bg-white">
-      <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4" aria-label="Navegación principal">
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-medium text-gray-900">
-            {userName}
-          </span>
-          <span className="hidden sm:inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
-            {roleLabels[userRole] || userRole}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="hidden md:flex md:items-center md:gap-4">
-            {userMenu.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="text-sm font-medium text-gray-700 hover:text-blue-600"
-              >
-                {item.label}
-              </Link>
-            ))}
+    <>
+      <header className="border-b border-gray-200 bg-white">
+        <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4" aria-label="Navegación principal">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-gray-900">{userName}</span>
+            <span className="hidden sm:inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+              {roleLabels[userRole] || userRole}
+            </span>
           </div>
 
-          <form action="/api/auth/signout" method="POST">
-            <button
-              type="submit"
-              className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-            >
-              Cerrar sesión
-            </button>
-          </form>
-        </div>
-      </nav>
+          <div className="flex items-center gap-4">
+            <div className="hidden md:flex md:items-center md:gap-4">
+              {userMenu.map((item) => (
+                <Link key={item.href} href={item.href} className="text-sm font-medium text-gray-700 hover:text-blue-600">
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+
+            <form action="/api/auth/signout" method="POST">
+              <button type="submit" className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                Cerrar sesión
+              </button>
+            </form>
+          </div>
+        </nav>
+      </header>
       <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
-    </header>
+    </>
   )
 }
 
@@ -94,12 +82,7 @@ export default async function ProtectedLayout({
   }
 
   if (!allowedRoles.includes(profile.rol)) {
-    const redirectMap: Record<string, string> = {
-      gestor_lotes: '/lotes',
-      gestor_casos: '/casos',
-      admin: '/lotes',
-    }
-    redirect(redirectMap[profile.rol] || '/lotes')
+    redirect(inicioPorRol(profile.rol))
   }
 
   return (
