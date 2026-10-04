@@ -1,6 +1,11 @@
 -- Capa del portal web. Solo aplica sobre Supabase (usa auth y storage) y
 -- requiere las migraciones del motor 001-003 ya aplicadas.
 
+-- Funciones auxiliares fuera de los esquemas expuestos por la Data API
+CREATE SCHEMA IF NOT EXISTS privado;
+REVOKE ALL ON SCHEMA privado FROM PUBLIC;
+GRANT USAGE ON SCHEMA privado TO authenticated;
+
 -- ---------------------------------------------------------------------------
 -- Catálogo de etapas y fases (mismos IDs que src/catalogo_procesal.py)
 -- ---------------------------------------------------------------------------
@@ -43,7 +48,7 @@ INSERT INTO public.catalogo_fases (fas_id, eta_id, nombre) VALUES
     (92, 15, '6.5 CONGELAMIENTO DE CUENTAS')
 ON CONFLICT (fas_id) DO UPDATE SET eta_id = EXCLUDED.eta_id, nombre = EXCLUDED.nombre;
 
-CREATE OR REPLACE FUNCTION public.par_etapa_fase_valido(p_eta_id INTEGER, p_fas_id INTEGER)
+CREATE OR REPLACE FUNCTION privado.par_etapa_fase_valido(p_eta_id INTEGER, p_fas_id INTEGER)
 RETURNS BOOLEAN
 LANGUAGE sql STABLE
 SET search_path = ''
@@ -66,7 +71,7 @@ CREATE TABLE IF NOT EXISTS public.perfiles (
     CONSTRAINT ck_perfiles_rol CHECK (rol IN ('admin', 'gestor_lotes', 'gestor_casos'))
 );
 
-CREATE OR REPLACE FUNCTION public.rol_actual()
+CREATE OR REPLACE FUNCTION privado.rol_actual()
 RETURNS TEXT
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = ''
@@ -123,6 +128,12 @@ CREATE INDEX IF NOT EXISTS idx_solicitudes_estado
     ON public.solicitudes_lote(estado, creado_en);
 CREATE INDEX IF NOT EXISTS idx_solicitudes_perfil
     ON public.solicitudes_lote(perfil);
+CREATE INDEX IF NOT EXISTS idx_solicitudes_solicitante
+    ON public.solicitudes_lote(solicitado_por);
+CREATE INDEX IF NOT EXISTS idx_solicitudes_ejecucion
+    ON public.solicitudes_lote(ejecucion_id);
+CREATE INDEX IF NOT EXISTS idx_catalogo_fases_etapa
+    ON public.catalogo_fases(eta_id);
 
 CREATE OR REPLACE FUNCTION public.tocar_actualizado_en()
 RETURNS TRIGGER
@@ -148,7 +159,7 @@ AS $$
 DECLARE
     v_estado VARCHAR;
 BEGIN
-    IF public.rol_actual() IS NULL OR public.rol_actual() NOT IN ('admin', 'gestor_lotes') THEN
+    IF privado.rol_actual() IS NULL OR privado.rol_actual() NOT IN ('admin', 'gestor_lotes') THEN
         RAISE EXCEPTION 'ROL_NO_AUTORIZADO' USING ERRCODE = '42501';
     END IF;
     SELECT estado INTO v_estado FROM public.solicitudes_lote WHERE id = p_id FOR UPDATE;
@@ -174,6 +185,8 @@ $$;
 -- ---------------------------------------------------------------------------
 ALTER TABLE public.revisiones_ia
     ADD COLUMN IF NOT EXISTS revisado_por UUID REFERENCES auth.users(id);
+CREATE INDEX IF NOT EXISTS idx_revisiones_revisor
+    ON public.revisiones_ia(revisado_por);
 
 -- Replica las reglas de scripts/importar_revision_ia.py. La versión vigente
 -- debe coincidir con VERSION_PROMPT de src/proveedor_nvidia.py.
@@ -201,7 +214,7 @@ DECLARE
     v_actual JSONB;
     v_ref TEXT;
 BEGIN
-    IF public.rol_actual() IS NULL OR public.rol_actual() NOT IN ('admin', 'gestor_casos') THEN
+    IF privado.rol_actual() IS NULL OR privado.rol_actual() NOT IN ('admin', 'gestor_casos') THEN
         RAISE EXCEPTION 'ROL_NO_AUTORIZADO' USING ERRCODE = '42501';
     END IF;
     IF v_decision NOT IN ('ACEPTAR_SISTEMA', 'ACEPTAR_IA', 'CORREGIR_MANUALMENTE', 'POSPONER') THEN
@@ -234,7 +247,7 @@ BEGIN
         IF v_propuesta ->> 'decision' IS DISTINCT FROM 'CORREGIR'
            OR jsonb_typeof(v_actual -> 'eta_id') IS DISTINCT FROM 'number'
            OR jsonb_typeof(v_actual -> 'fas_id') IS DISTINCT FROM 'number'
-           OR NOT public.par_etapa_fase_valido(
+           OR NOT privado.par_etapa_fase_valido(
                   (v_actual ->> 'eta_id')::INTEGER, (v_actual ->> 'fas_id')::INTEGER) THEN
             RAISE EXCEPTION 'PROPUESTA_IA_INVALIDA';
         END IF;
@@ -253,7 +266,7 @@ BEGIN
     END IF;
 
     IF v_decision = 'CORREGIR_MANUALMENTE' THEN
-        IF NOT coalesce(public.par_etapa_fase_valido(p_eta_id, p_fas_id), FALSE)
+        IF NOT coalesce(privado.par_etapa_fase_valido(p_eta_id, p_fas_id), FALSE)
            OR v_observacion = '' THEN
             RAISE EXCEPTION 'CORRECCION_MANUAL_INVALIDA';
         END IF;
@@ -285,15 +298,25 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, PUBLIC;
 
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
-    ON ALL TABLES IN SCHEMA public FROM authenticated;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO authenticated;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA privado FROM PUBLIC;
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM authenticated;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM authenticated;
+
+GRANT SELECT ON
+    public.ejecuciones, public.cola_trabajo, public.resultados_ejecucion,
+    public.eventos_auditoria, public.solicitudes_lote,
+    public.expedientes, public.actuaciones, public.actuaciones_procesales,
+    public.ejecuciones_inferencia, public.auditorias_ia, public.revisiones_ia,
+    public.hitos_procesales, public.catalogo_etapas, public.catalogo_fases,
+    public.perfiles,
+    public.v_estado_ejecuciones, public.v_cola_trabajo, public.v_trabajadores_activos,
+    public.v_resumen_fases, public.v_casos_revision_manual, public.v_reporte_ejecutivo
+TO authenticated;
 GRANT INSERT (id, archivo_ruta, archivo_nombre, hoja, filtros, modo, parametro,
               trabajadores, continuar)
     ON public.solicitudes_lote TO authenticated;
 
-GRANT EXECUTE ON FUNCTION public.rol_actual() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.par_etapa_fase_valido(INTEGER, INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION privado.rol_actual() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.cancelar_solicitud(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.registrar_revision(BIGINT, VARCHAR, INTEGER, INTEGER, TEXT)
     TO authenticated;
@@ -331,7 +354,7 @@ BEGIN
         EXECUTE format('DROP POLICY IF EXISTS lectura_gestor_lotes ON public.%I', v_tabla);
         EXECUTE format(
             'CREATE POLICY lectura_gestor_lotes ON public.%I FOR SELECT TO authenticated '
-            'USING ((SELECT public.rol_actual()) IN (''admin'', ''gestor_lotes''))',
+            'USING ((SELECT privado.rol_actual()) IN (''admin'', ''gestor_lotes''))',
             v_tabla
         );
     END LOOP;
@@ -350,7 +373,7 @@ BEGIN
         EXECUTE format('DROP POLICY IF EXISTS lectura_gestor_casos ON public.%I', v_tabla);
         EXECUTE format(
             'CREATE POLICY lectura_gestor_casos ON public.%I FOR SELECT TO authenticated '
-            'USING ((SELECT public.rol_actual()) IN (''admin'', ''gestor_casos''))',
+            'USING ((SELECT privado.rol_actual()) IN (''admin'', ''gestor_casos''))',
             v_tabla
         );
     END LOOP;
@@ -359,19 +382,19 @@ $$;
 
 DROP POLICY IF EXISTS lectura_catalogo ON public.catalogo_etapas;
 CREATE POLICY lectura_catalogo ON public.catalogo_etapas FOR SELECT TO authenticated
-    USING ((SELECT public.rol_actual()) IS NOT NULL);
+    USING ((SELECT privado.rol_actual()) IS NOT NULL);
 DROP POLICY IF EXISTS lectura_catalogo ON public.catalogo_fases;
 CREATE POLICY lectura_catalogo ON public.catalogo_fases FOR SELECT TO authenticated
-    USING ((SELECT public.rol_actual()) IS NOT NULL);
+    USING ((SELECT privado.rol_actual()) IS NOT NULL);
 
 DROP POLICY IF EXISTS lectura_propia ON public.perfiles;
 CREATE POLICY lectura_propia ON public.perfiles FOR SELECT TO authenticated
-    USING (id = (SELECT auth.uid()) OR (SELECT public.rol_actual()) = 'admin');
+    USING (id = (SELECT auth.uid()) OR (SELECT privado.rol_actual()) = 'admin');
 
 DROP POLICY IF EXISTS alta_gestor_lotes ON public.solicitudes_lote;
 CREATE POLICY alta_gestor_lotes ON public.solicitudes_lote FOR INSERT TO authenticated
     WITH CHECK (
-        (SELECT public.rol_actual()) IN ('admin', 'gestor_lotes')
+        (SELECT privado.rol_actual()) IN ('admin', 'gestor_lotes')
         AND solicitado_por = (SELECT auth.uid())
     );
 
@@ -401,12 +424,12 @@ CREATE POLICY lotes_subida_entradas ON storage.objects FOR INSERT TO authenticat
     WITH CHECK (
         bucket_id = 'lotes'
         AND (storage.foldername(name))[1] = 'entradas'
-        AND (SELECT public.rol_actual()) IN ('admin', 'gestor_lotes')
+        AND (SELECT privado.rol_actual()) IN ('admin', 'gestor_lotes')
     );
 
 DROP POLICY IF EXISTS lotes_lectura ON storage.objects;
 CREATE POLICY lotes_lectura ON storage.objects FOR SELECT TO authenticated
     USING (
         bucket_id = 'lotes'
-        AND (SELECT public.rol_actual()) IN ('admin', 'gestor_lotes')
+        AND (SELECT privado.rol_actual()) IN ('admin', 'gestor_lotes')
     );

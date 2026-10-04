@@ -7,7 +7,7 @@ from src.proveedor_nvidia import VERSION_PROMPT
 
 
 RAIZ = Path(__file__).resolve().parents[1]
-SQL_PORTAL = RAIZ / "migrations" / "supabase" / "001_portal.sql"
+SQL_PORTAL = RAIZ / "migrations" / "supabase" / "002_portal.sql"
 SQL_MOTOR = sorted((RAIZ / "migrations" / "postgres").glob("*.sql"))
 
 
