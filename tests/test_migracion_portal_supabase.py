@@ -9,6 +9,8 @@ from src.proveedor_nvidia import VERSION_PROMPT
 RAIZ = Path(__file__).resolve().parents[1]
 SQL_PORTAL = RAIZ / "migrations" / "supabase" / "002_portal.sql"
 SQL_MOTOR = sorted((RAIZ / "migrations" / "postgres").glob("*.sql"))
+SQL_SUPABASE = sorted((RAIZ / "migrations" / "supabase").glob("*.sql"))
+SQL_ACCESO = RAIZ / "migrations" / "supabase" / "003_acceso_unificado.sql"
 
 
 class TestMigracionPortalSupabase(unittest.TestCase):
@@ -31,9 +33,19 @@ class TestMigracionPortalSupabase(unittest.TestCase):
             self.assertEqual(int(eta_id), int(nombre.split(".")[0]) + 9, nombre)
 
     def test_version_vigente_coincide_con_el_prompt_de_auditoria(self):
-        constante = re.search(r"c_version_vigente CONSTANT VARCHAR := '([^']+)'", self.sql)
-        self.assertIsNotNone(constante)
-        self.assertEqual(constante.group(1), VERSION_PROMPT)
+        for archivo in SQL_SUPABASE:
+            for constante in re.findall(r"c_version_vigente CONSTANT VARCHAR := '([^']+)'",
+                                        archivo.read_text(encoding="utf-8")):
+                self.assertEqual(constante, VERSION_PROMPT, archivo.name)
+
+    def test_acceso_unificado_sin_roles_divididos(self):
+        sql = SQL_ACCESO.read_text(encoding="utf-8")
+        self.assertIn("CHECK (rol IN ('admin', 'usuario'))", sql)
+        politicas = re.findall(r"CREATE POLICY (\w+)", sql)
+        self.assertTrue(politicas)
+        for politica in politicas:
+            self.assertNotIn("gestor", politica)
+        self.assertNotRegex(sql, r"rol_actual\(\)\)? (NOT )?IN \(")
 
     def test_todas_las_tablas_del_motor_tienen_rls(self):
         tablas_motor = set()

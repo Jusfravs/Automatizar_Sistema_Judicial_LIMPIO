@@ -32,3 +32,6 @@ network_capture*.json
 
 # Configuración real del servicio del portal
 config_supabase.json
+
+# Vínculo local con Vercel
+.vercel/
