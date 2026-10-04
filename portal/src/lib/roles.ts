@@ -1,15 +1,23 @@
 export function inicioPorRol(rol: string | null | undefined): string {
+  if (rol === 'admin' || rol === 'usuario') {
+    return '/lotes'
+  }
+  return '/sin-acceso'
+}
+
+export const ROLES_PORTAL = ['admin', 'usuario'] as const
+
+export function rolEtiqueta(rol: string): string {
   switch (rol) {
-    case 'gestor_lotes':
-      return '/lotes'
-    case 'gestor_casos':
-      return '/casos'
     case 'admin':
-      return '/lotes'
+      return 'Administrador'
+    case 'usuario':
+      return 'Usuario'
     default:
-      return '/sin-acceso'
+      return rol
   }
 }
 
-export const ROLES_LOTES = ['gestor_lotes', 'admin']
-export const ROLES_CASOS = ['gestor_casos', 'admin']
+export function esRolValido(rol: string): rol is (typeof ROLES_PORTAL)[number] {
+  return ROLES_PORTAL.includes(rol as (typeof ROLES_PORTAL)[number])
+}

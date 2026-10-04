@@ -1,25 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { inicioPorRol } from '@/lib/roles'
+import { rolEtiqueta, esRolValido } from '@/lib/roles'
 
 function NavBar({ children, userRole, userName }: { children: React.ReactNode; userRole: string; userName: string }) {
-  const roleLabels: Record<string, string> = {
-    gestor_lotes: 'Gestor de Lotes',
-    gestor_casos: 'Gestor de Casos',
-    admin: 'Administrador',
-  }
-
-  const menuItems: Record<string, { href: string; label: string }[]> = {
-    gestor_lotes: [{ href: '/lotes', label: 'Lotes' }],
-    gestor_casos: [{ href: '/casos', label: 'Casos' }],
-    admin: [
-      { href: '/lotes', label: 'Lotes' },
-      { href: '/casos', label: 'Casos' },
-    ],
-  }
-
-  const userMenu = menuItems[userRole] || []
+  const menuItems = [
+    { href: '/lotes', label: 'Lotes' },
+    { href: '/casos', label: 'Casos' },
+  ]
 
   return (
     <>
@@ -28,13 +16,13 @@ function NavBar({ children, userRole, userName }: { children: React.ReactNode; u
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-gray-900">{userName}</span>
             <span className="hidden sm:inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
-              {roleLabels[userRole] || userRole}
+              {rolEtiqueta(userRole)}
             </span>
           </div>
 
           <div className="flex items-center gap-4">
             <div className="hidden md:flex md:items-center md:gap-4">
-              {userMenu.map((item) => (
+              {menuItems.map((item) => (
                 <Link key={item.href} href={item.href} className="text-sm font-medium text-gray-700 hover:text-blue-600">
                   {item.label}
                 </Link>
@@ -54,13 +42,7 @@ function NavBar({ children, userRole, userName }: { children: React.ReactNode; u
   )
 }
 
-export default async function ProtectedLayout({
-  children,
-  allowedRoles,
-}: {
-  children: React.ReactNode
-  allowedRoles: string[]
-}) {
+export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
 
   const {
@@ -77,12 +59,8 @@ export default async function ProtectedLayout({
     .eq('id', user.id)
     .single()
 
-  if (!profile || !profile.activo) {
+  if (!profile || !profile.activo || !esRolValido(profile.rol)) {
     redirect('/sin-acceso')
-  }
-
-  if (!allowedRoles.includes(profile.rol)) {
-    redirect(inicioPorRol(profile.rol))
   }
 
   return (
