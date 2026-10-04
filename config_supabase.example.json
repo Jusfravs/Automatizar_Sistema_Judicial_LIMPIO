@@ -1,0 +1,75 @@
+{
+  "filtros_activos": {
+    "sucursal": "TODAS",
+    "oficina": "",
+    "estado_judicial": "ACTIVO",
+    "columna_estado_judicial": "ESTADO",
+    "inicio_desde_juicio": ""
+  },
+  "navegacion": {
+    "url_portal": "https://procesosjudiciales.funcionjudicial.gob.ec/busqueda-filtros",
+    "captcha_timeout_ms": 300000,
+    "captcha_render_timeout_ms": 15000,
+    "resultados_timeout_ms": 30000,
+    "datos_generales_timeout_ms": 30000,
+    "actuaciones_timeout_ms": 30000,
+    "movimientos_timeout_ms": 30000,
+    "retorno_buscador_timeout_ms": 15000,
+    "pantalla_final_timeout_ms": 30000,
+    "sondeo_estabilidad_ms": 250,
+    "comprobaciones_estables": 3,
+    "quietud_api_ms": 750,
+    "max_reintentos_transicion": 2
+  },
+  "captcha": {
+    "modo": "api_con_espera_humana_limitada",
+    "proveedor": "2captcha",
+    "api_key_env": "AUTOCAPTCHA_API_KEY",
+    "tipo_tarea": "recaptcha_v2_proxyless",
+    "http_timeout_ms": 10000,
+    "max_intentos_red": 3,
+    "reintento_red_ms": 1000,
+    "resolucion_timeout_ms": 300000,
+    "sondeo_ms": 5000,
+    "confirmacion_inyeccion_timeout_ms": 10000,
+    "espera_post_solucion_ms": 3000,
+    "max_tareas_por_causa": 2,
+    "max_errores_consecutivos": 3,
+    "saldo_minimo_usd": 0.01,
+    "espera_humana_maxima_ms": 30000,
+    "reportar_incorrecta": true,
+    "reportar_correcta": true
+  },
+  "sistema": {
+    "intervalo_autoguardado": 1
+  },
+  "concurrencia": {
+    "habilitada": true,
+    "trabajadores": 2,
+    "maximo_trabajadores": 4,
+    "navegador_visible": true,
+    "exportar_cada": 10,
+    "lease_segundos": 120,
+    "heartbeat_segundos": 30,
+    "maximo_intentos": 3,
+    "captcha_max_concurrentes": 2,
+    "inicio_escalonado_segundos": 2.0,
+    "casos_por_sesion": 10
+  },
+  "inferencia_ia": {
+    "modo": "sombra",
+    "proveedor": "nvidia",
+    "modelo": "nvidia/nemotron-3-super-120b-a12b",
+    "api_key_env": "NVIDIA_API_KEY"
+  },
+  "base_de_datos": {
+    "motor": "postgres",
+    "sslmode": "verify-full",
+    "sslrootcert": "C:/ruta/al/certificado/prod-ca-2021.crt",
+    "host": "HOST_DEL_SESSION_POOLER.pooler.supabase.com",
+    "puerto": 5432,
+    "nombre_db": "postgres",
+    "usuario": "postgres.REF_DEL_PROYECTO",
+    "password_env": "POSTGRES_PASSWORD"
+  }
+}
