@@ -77,6 +77,22 @@ class TestMigracionPortalSupabase(unittest.TestCase):
         self.assertIn("'entradas'", sql)
         self.assertNotRegex(sql, r"(?i)\bDROP\b")
 
+    def test_endurecimiento_subida_privilegios_y_cancelacion(self):
+        sql = (RAIZ / "migrations" / "supabase" / "005_endurecimiento_portal.sql").read_text(
+            encoding="utf-8")
+        patron = re.search(r"name ~ '([^']+)'", sql)
+        self.assertIsNotNone(patron)
+        nombre_valido = "entradas/6f1c2b9e-1111-4222-8333-444455556666.xlsx"
+        self.assertRegex(nombre_valido, patron.group(1))
+        for invalido in ("entradas/otro.xlsx", "entradas/sub/6f1c2b9e-1111-4222-8333-444455556666.xlsx",
+                         "resultados/6f1c2b9e-1111-4222-8333-444455556666.xlsx",
+                         "entradas/6f1c2b9e-1111-4222-8333-444455556666.xlsx.exe"):
+            self.assertNotRegex(invalido, patron.group(1))
+        for objeto in ("TABLES", "SEQUENCES", "FUNCTIONS"):
+            self.assertIn("REVOKE ALL ON %s FROM authenticated" % objeto, sql)
+        self.assertIn("cancelado_por = v_usuario", sql)
+        self.assertIn("'SOLICITUD_CANCELADA'", sql)
+
     def test_anon_no_recibe_privilegios(self):
         self.assertIn("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon", self.sql)
         self.assertNotRegex(self.sql, r"GRANT [^;]* TO [^;]*\banon\b")
