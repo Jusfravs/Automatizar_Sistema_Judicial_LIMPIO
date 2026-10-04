@@ -29,3 +29,6 @@ network_capture*.json
 # VS Code / IDE
 .vscode/
 .idea/
+
+# Configuración real del servicio del portal
+config_supabase.json

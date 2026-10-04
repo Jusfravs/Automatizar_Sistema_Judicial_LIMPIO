@@ -177,6 +177,46 @@ def ejecuciones(config: dict, limite: int = 10, solo_errores: bool = False) -> l
             return [dict(fila) for fila in cur.fetchall()]
 
 
+def ejecutar_lote(perfil: Path, *, solo: str | None = None, lote: int | None = None,
+                  workers: int = 2, continuar: bool = False, base: Path = CONFIG_COMUN,
+                  config: dict | None = None):
+    """Procesa un lote preparado con el bloqueo exclusivo de su perfil."""
+    if config is None:
+        config = _config_perfil(perfil, base)
+    revision = diagnostico(config)
+    if not revision["esquema_completo"]:
+        raise ValueError("ESQUEMA_POSTGRES_INCOMPLETO")
+    if not revision["auditoria_config"]:
+        raise ValueError("MIGRACION_003_PENDIENTE")
+    if continuar and solo:
+        raise ValueError("CONTINUAR_NO_ADMITIDO_CON_SOLO")
+    actualizar_casos(perfil, base)
+    opciones = ["--config", str(base)]
+    if solo:
+        opciones += ["--solo", solo]
+    elif lote is not None:
+        opciones += ["--lote", str(lote)]
+    else:
+        opciones += ["--pendientes"]
+    if continuar:
+        opciones.append("--omitir-procesados")
+    opciones += ["--workers", str(workers)]
+    import main as motor
+
+    repo = _repositorio(config)
+    llave = int.from_bytes(hashlib.sha256(config["perfil"].encode()).digest()[:8], "big") & ((1 << 63) - 1)
+    with repo._connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (llave,))
+            if not cur.fetchone()[0]:
+                raise ValueError("PERFIL_YA_EN_EJECUCION")
+        try:
+            return motor.main(opciones, config_efectiva=config)
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (llave,))
+
+
 def construir_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="comando", required=True)
@@ -197,6 +237,12 @@ def construir_parser() -> argparse.ArgumentParser:
     ejecutar.add_argument("--workers", type=int, default=2)
     ejecutar.add_argument("--continuar", action="store_true",
                           help="Omitir causas ya procesadas en esta base")
+    servicio = sub.add_parser("servicio", help="Atender los lotes solicitados desde el portal web")
+    servicio.add_argument("--config", type=Path, default=RAIZ / "config_supabase.json")
+    servicio.add_argument("--intervalo", type=int, default=10,
+                          help="Segundos entre consultas cuando no hay solicitudes")
+    servicio.add_argument("--una-vez", action="store_true",
+                          help="Atender a lo sumo una solicitud y salir")
     for nombre in ("diagnostico", "estado", "errores"):
         comando = sub.add_parser(nombre)
         comando.add_argument("perfil", type=Path)
@@ -222,6 +268,12 @@ def main(argv=None) -> int:
             _json(resumen)
         elif args.comando == "preparar":
             _json(preparar(args.excel, args.salida, CONFIG_COMUN, args.hoja))
+        elif args.comando == "servicio":
+            if args.intervalo < 2 or args.intervalo > 300:
+                raise ValueError("INTERVALO_FUERA_DE_RANGO:2..300")
+            from src.servicio_portal import ejecutar_servicio
+
+            return ejecutar_servicio(args.config, intervalo=args.intervalo, una_vez=args.una_vez)
         else:
             config = _config_perfil(args.perfil)
             if args.comando == "diagnostico":
@@ -231,38 +283,10 @@ def main(argv=None) -> int:
                     raise ValueError("LIMITE_FUERA_DE_RANGO:1..500")
                 _json(ejecuciones(config, args.limite, args.comando == "errores"))
             elif args.comando == "ejecutar":
-                revision = diagnostico(config)
-                if not revision["esquema_completo"]:
-                    raise ValueError("ESQUEMA_POSTGRES_INCOMPLETO")
-                if not revision["auditoria_config"]:
-                    raise ValueError("MIGRACION_003_PENDIENTE")
-                if args.continuar and args.solo:
-                    raise ValueError("CONTINUAR_NO_ADMITIDO_CON_SOLO")
-                actualizar_casos(args.perfil, CONFIG_COMUN)
-                opciones = ["--config", str(CONFIG_COMUN)]
-                if args.solo:
-                    opciones += ["--solo", args.solo]
-                elif args.lote is not None:
-                    opciones += ["--lote", str(args.lote)]
-                else:
-                    opciones += ["--pendientes"]
-                if args.continuar:
-                    opciones.append("--omitir-procesados")
-                opciones += ["--workers", str(args.workers)]
-                import main as motor
-
-                repo = _repositorio(config)
-                llave = int.from_bytes(hashlib.sha256(config["perfil"].encode()).digest()[:8], "big") & ((1 << 63) - 1)
-                with repo._connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("SELECT pg_try_advisory_lock(%s)", (llave,))
-                        if not cur.fetchone()[0]:
-                            raise ValueError("PERFIL_YA_EN_EJECUCION")
-                    try:
-                        resultado = motor.main(opciones, config_efectiva=config)
-                    finally:
-                        with conn.cursor() as cur:
-                            cur.execute("SELECT pg_advisory_unlock(%s)", (llave,))
+                resultado = ejecutar_lote(
+                    args.perfil, solo=args.solo, lote=args.lote, workers=args.workers,
+                    continuar=args.continuar, config=config,
+                )
                 if resultado is not None:
                     _json(resultado)
                     if resultado.get("estado") != "COMPLETADA":
