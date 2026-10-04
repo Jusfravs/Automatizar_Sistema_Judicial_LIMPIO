@@ -1,0 +1,31 @@
+# Entornos virtuales y compilacion Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Archivos de datos y reportes generados
+/outputs/
+/backups/
+/data/
+estado_casos.db
+*.db.backup_*
+*.bak
+temp_htmls/
+*.html
+
+# Logs y temporales
+*.log
+*.rpa.lock
+logs/
+scratch/
+network_capture*.json
+# Secretos locales (nunca versionar claves de proveedores)
+.env
+.env.*
+!.env.example
+
+
+# VS Code / IDE
+.vscode/
+.idea/

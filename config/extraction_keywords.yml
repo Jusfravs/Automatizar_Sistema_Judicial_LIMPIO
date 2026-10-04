@@ -1,0 +1,11 @@
+# Keywords configurables por caso/estado para identificar 'mandamiento'
+training_case:
+  - "mandam"
+  - "mandamiento"
+  - "MANDAMIENTO DE EJECUCIÓN"
+  - "auto de ejecución"
+  - "auto de ejecución"
+  - "auto de cumplimiento"
+
+# Política de fecha por defecto para este caso
+policy_date: "relevant"  # opciones: earliest/latest/relevant

@@ -1,0 +1,96 @@
+{
+    "filtros_activos":  {
+                            "sucursal":  "QUITO",
+                            "oficina":  "QUITO SUR",
+                            "usuario":  "",
+                            "estado_judicial":  "ACTIVO",
+                            "columna_estado_judicial":  "ESTADO",
+                            "inicio_desde_juicio":  ""
+                        },
+    "rutas":  {
+                  "archivo_csv":  "data/quito/reporte_trabajo_quito.csv",
+                  "archivo_origen":  "data/quito/Reporte_juicios_QUITO_20260817.xlsx",
+                  "archivo_excel_final":  "data/quito/REPORTE_PROCESADO_QUITO.xlsx",
+                  "hoja_lectura":  "QUITO",
+                  "archivo_db":  "data/quito/estado_casos_quito.db",
+                  "archivo_casos_fallidos":  "data/quito/casos_fallidos_quito.txt"
+              },
+    "navegacion":  {
+                       "url_portal":  "https://procesosjudiciales.funcionjudicial.gob.ec/busqueda-filtros",
+                       "captcha_timeout_ms":  300000,
+                       "captcha_render_timeout_ms":  15000,
+                       "resultados_timeout_ms":  30000,
+                       "datos_generales_timeout_ms":  30000,
+                       "actuaciones_timeout_ms":  60000,
+                       "movimientos_timeout_ms":  30000,
+                       "retorno_buscador_timeout_ms":  15000,
+                       "pantalla_final_timeout_ms":  30000,
+                       "sondeo_estabilidad_ms":  100,
+                       "comprobaciones_estables":  2,
+                       "quietud_api_ms":  250,
+                       "max_reintentos_transicion":  2,
+                       "validacion_pertenencia":  {
+                                                      "activa":  true,
+                                                      "actores_requeridos":  [
+                                                                                 "FUNDACION PAREA EL DESARROLLO INTEGRAL ESPOIR"
+                                                                             ],
+                                                      "acciones_requeridas":  [
+                                                                                  "COBRO DE PAGARE A LA ORDEN"
+                                                                              ]
+                                                  }
+                   },
+    "captcha":  {
+                    "modo":  "api_con_espera_humana_limitada",
+                    "proveedor":  "2captcha",
+                    "api_key_env":  "AUTOCAPTCHA_API_KEY",
+                    "tipo_tarea":  "recaptcha_v2_proxyless",
+                    "http_timeout_ms":  10000,
+                    "max_intentos_red":  3,
+                    "reintento_red_ms":  1000,
+                    "resolucion_timeout_ms":  300000,
+                    "sondeo_ms":  5000,
+                    "confirmacion_inyeccion_timeout_ms":  10000,
+                    "espera_post_solucion_ms":  500,
+                    "max_tareas_por_causa":  2,
+                    "max_errores_consecutivos":  3,
+                    "saldo_minimo_usd":  0.01,
+                    "espera_humana_maxima_ms":  30000,
+                    "reportar_incorrecta":  true,
+                    "reportar_correcta":  true
+                },
+    "sistema":  {
+                    "intervalo_autoguardado":  1
+                },
+    "concurrencia":  {
+                           "habilitada":  false,
+                           "trabajadores":  2,
+                           "maximo_trabajadores":  4,
+                           "navegador_visible":  true,
+                           "exportar_cada":  10,
+                           "lease_segundos":  120,
+                           "heartbeat_segundos":  30,
+                           "maximo_intentos":  3,
+                           "captcha_max_concurrentes":  2,
+                           "inicio_escalonado_segundos":  2.0,
+                           "casos_por_sesion":  10
+                       },
+    "auditoria":  {
+                      "total_esperado":  129,
+                      "total_causas_unicas_esperado":  128,
+                      "alcance":  "Todos los casos judicialmente ACTIVOS de QUITO / QUITO SUR, sin muestreo"
+                  },
+    "inferencia_ia":  {
+                             "modo":  "sombra",
+                             "proveedor":  "nvidia",
+                             "modelo":  "nvidia/nemotron-3-super-120b-a12b",
+                             "api_key_env":  "NVIDIA_API_KEY"
+                         },
+    "base_de_datos":  {
+                          "motor":  "sqlite",
+                          "host":  "localhost",
+                          "puerto":  5432,
+                          "nombre_db":  "casos_judiciales",
+                          "usuario":  "judicial_app",
+                          "password_env":  "POSTGRES_PASSWORD"
+                      }
+}

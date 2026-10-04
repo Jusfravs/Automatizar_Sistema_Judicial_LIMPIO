@@ -1,0 +1,13 @@
+# Dependencias del proyecto Automatizar_Sistema_Judicial
+beautifulsoup4==4.15.0
+lxml==6.1.1
+numpy==2.4.2
+openpyxl==3.1.5
+pandas==3.0.0
+playwright==1.61.0
+psycopg2-binary==2.9.11
+PyYAML==6.0.2
+python-dateutil==2.9.0.post0
+six==1.17.0
+soupsieve==2.9.1
+tzdata==2025.3
