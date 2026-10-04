@@ -1,8 +1,10 @@
+import io
 import json
 import tempfile
 import threading
 import time
 import unittest
+import zipfile
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -15,7 +17,23 @@ from src.servicio_portal import (
     Solicitud,
     VigilanteCancelacion,
     aplicar_filtros,
+    codigo_publico,
+    verificar_excel_seguro,
 )
+
+
+def paquete_zip(archivos):
+    memoria = io.BytesIO()
+    with zipfile.ZipFile(memoria, "w", zipfile.ZIP_DEFLATED) as paquete:
+        for nombre, contenido in archivos.items():
+            paquete.writestr(nombre, contenido)
+    return memoria.getvalue()
+
+
+EXCEL_PRUEBA = paquete_zip({
+    "[Content_Types].xml": "<Types/>",
+    "xl/workbook.xml": "<workbook/>",
+})
 
 
 ID = "6f1c2b9e-1111-4222-8333-444455556666"
@@ -69,7 +87,7 @@ class StorageFalso:
         self.subidas = {}
 
     def descargar(self, ruta):
-        return b"excel"
+        return EXCEL_PRUEBA
 
     def subir(self, ruta, contenido, tipo=None):
         self.subidas[ruta] = contenido
@@ -200,7 +218,7 @@ class TestServicioPortal(unittest.TestCase):
 
     def servicio(self, solicitudes, ejecutar=None, preparar=None, storage=None, **opciones):
         def preparar_por_defecto(excel, salida, hoja):
-            self.assertEqual(excel.read_bytes(), b"excel")
+            self.assertEqual(excel.read_bytes(), EXCEL_PRUEBA)
             return {"directorio": str(self.lote), "perfil": "lote-abc"}
 
         return ServicioPortal(
@@ -306,6 +324,58 @@ class TestServicioPortal(unittest.TestCase):
         solicitudes = SolicitudesFalsas([])
         self.servicio(solicitudes).ejecutar(una_vez=True)
         self.assertEqual(solicitudes.cerradas_para, "servidor")
+
+
+class TestVerificarExcelSeguro(unittest.TestCase):
+    def test_acepta_un_xlsx_normal(self):
+        verificar_excel_seguro(EXCEL_PRUEBA)
+
+    def test_rechaza_lo_que_no_es_xlsx(self):
+        with self.assertRaisesRegex(ErrorSolicitud, "NO_ES_XLSX"):
+            verificar_excel_seguro(b"esto no es un excel")
+
+    def test_rechaza_una_bomba_de_compresion(self):
+        bomba = paquete_zip({"xl/sharedStrings.xml": "0" * (5 * 1024 * 1024)})
+        with self.assertRaisesRegex(ErrorSolicitud, "EXCEL_SOSPECHOSO"):
+            verificar_excel_seguro(bomba)
+
+    def test_rechaza_archivos_demasiado_grandes(self):
+        with patch("src.servicio_portal.MAXIMO_EXCEL_BYTES", 10):
+            with self.assertRaisesRegex(ErrorSolicitud, "EXCEL_DEMASIADO_GRANDE"):
+                verificar_excel_seguro(EXCEL_PRUEBA)
+
+
+class TestCodigoPublico(unittest.TestCase):
+    def test_conserva_codigos_estables(self):
+        self.assertEqual(codigo_publico("POSTGRES_NO_DISPONIBLE"), "POSTGRES_NO_DISPONIBLE")
+        self.assertEqual(codigo_publico(ValueError("COLUMNAS_FALTANTES:SUCURSAL, ESTADO")),
+                         "COLUMNAS_FALTANTES:SUCURSAL, ESTADO")
+
+    def test_oculta_rutas_y_detalles_internos(self):
+        self.assertEqual(codigo_publico(r"DESTINO_YA_EXISTE:C:\Users\HP\outputs\lote"),
+                         "DESTINO_YA_EXISTE")
+        self.assertEqual(
+            codigo_publico('connection to server at "db.x.supabase.co" (1.2.3.4), port 5432 failed'),
+            "ERROR_INTERNO",
+        )
+        self.assertEqual(codigo_publico("", "STORAGE_NO_DISPONIBLE"), "STORAGE_NO_DISPONIBLE")
+
+
+class TestServicioRechazaExcelInseguro(unittest.TestCase):
+    def test_no_prepara_un_archivo_que_no_es_xlsx(self):
+        temporal = tempfile.TemporaryDirectory()
+        self.addCleanup(temporal.cleanup)
+        storage = MagicMock()
+        storage.descargar.return_value = b"no es zip"
+        preparar = MagicMock()
+        solicitudes = SolicitudesFalsas([solicitud()])
+        ServicioPortal(
+            solicitudes, storage, preparar_lote=preparar, ejecutar_lote=MagicMock(),
+            directorio=Path(temporal.name), worker_host="servidor",
+        ).atender_una()
+        preparar.assert_not_called()
+        self.assertEqual(solicitudes.final["estado"], "RECHAZADA")
+        self.assertEqual(solicitudes.final["mensaje"], "EXCEL_INVALIDO:NO_ES_XLSX")
 
 
 class TestVigilanteCancelacion(unittest.TestCase):

@@ -5,10 +5,13 @@ from __future__ import annotations
 import _thread
 import copy
 import hashlib
+import io
 import json
 import os
+import re
 import socket
 import threading
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -27,6 +30,11 @@ FILTROS_PERMITIDOS = ("sucursal", "oficina", "estado_judicial")
 ESTADOS_TERMINALES = ("COMPLETADA", "FALLIDA", "RECHAZADA", "CANCELADA")
 ESTADOS_DE_EJECUCION = {"COMPLETADA": "COMPLETADA", "CANCELADA": "CANCELADA", "FALLIDA": "FALLIDA"}
 LIMITE_MENSAJE = 500
+MAXIMO_EXCEL_BYTES = 20 * 1024 * 1024
+MAXIMO_DESCOMPRIMIDO_BYTES = 200 * 1024 * 1024
+MAXIMO_ARCHIVOS_INTERNOS = 5000
+MAXIMA_TASA_COMPRESION = 200
+CODIGO_PUBLICO = re.compile(r"^[A-Z][A-Z0-9_]*(:[A-Z0-9_ ,.\-]{1,200})?$")
 COLUMNAS_SOLICITUD = (
     "id, archivo_ruta, archivo_nombre, hoja, filtros, modo, parametro, trabajadores, continuar"
 )
@@ -92,6 +100,36 @@ class Solicitud:
         if self.modo == "pendientes":
             return {"workers": self.trabajadores, "continuar": self.continuar}
         raise ErrorSolicitud("MODO_INVALIDO")
+
+
+def codigo_publico(texto: object, predeterminado: str = "ERROR_INTERNO") -> str:
+    """Reduce un error a un código apto para mostrarse en el portal.
+
+    Los detalles (rutas locales, datos de conexión, trazas) quedan solo en el log.
+    """
+    valor = str(texto or "").strip()
+    if CODIGO_PUBLICO.match(valor):
+        return valor
+    cabeza = valor.split(":", 1)[0].strip()
+    return cabeza if CODIGO_PUBLICO.match(cabeza) else predeterminado
+
+
+def verificar_excel_seguro(contenido: bytes) -> None:
+    """Rechaza archivos que no son xlsx o que se expanden de forma desmedida."""
+    if len(contenido) > MAXIMO_EXCEL_BYTES:
+        raise ErrorSolicitud("EXCEL_DEMASIADO_GRANDE")
+    if not zipfile.is_zipfile(io.BytesIO(contenido)):
+        raise ErrorSolicitud("EXCEL_INVALIDO:NO_ES_XLSX")
+    with zipfile.ZipFile(io.BytesIO(contenido)) as paquete:
+        entradas = paquete.infolist()
+        if len(entradas) > MAXIMO_ARCHIVOS_INTERNOS:
+            raise ErrorSolicitud("EXCEL_SOSPECHOSO:DEMASIADOS_ARCHIVOS")
+        descomprimido = sum(entrada.file_size for entrada in entradas)
+        comprimido = sum(entrada.compress_size for entrada in entradas) or 1
+        if descomprimido > MAXIMO_DESCOMPRIMIDO_BYTES:
+            raise ErrorSolicitud("EXCEL_SOSPECHOSO:TAMANO_DESCOMPRIMIDO")
+        if descomprimido / comprimido > MAXIMA_TASA_COMPRESION:
+            raise ErrorSolicitud("EXCEL_SOSPECHOSO:TASA_DE_COMPRESION")
 
 
 def aplicar_filtros(config: dict, filtros: dict) -> dict:
@@ -342,18 +380,23 @@ class ServicioPortal:
         except Exception as exc:
             logger.exception("[PORTAL] Solicitud %s falló.", solicitud.id)
             self.solicitudes.actualizar(solicitud.id, estado="FALLIDA",
-                                        mensaje="%s: %s" % (type(exc).__name__, exc))
+                                        mensaje=codigo_publico(exc))
 
     def _preparar(self, solicitud: Solicitud) -> tuple[Path, str]:
         carpeta = self.directorio / "entradas" / solicitud.id
         carpeta.mkdir(parents=True, exist_ok=True)
         excel = carpeta / "entrada.xlsx"
-        excel.write_bytes(self.storage.descargar(solicitud.archivo_ruta))
+        contenido = self.storage.descargar(solicitud.archivo_ruta)
+        verificar_excel_seguro(contenido)
+        excel.write_bytes(contenido)
         try:
             preparado = self.preparar_lote(excel, self.directorio / "lotes" / solicitud.id,
                                            solicitud.hoja)
         except ValueError as exc:
-            raise ErrorSolicitud("EXCEL_INVALIDO:%s" % exc) from None
+            logger.warning("[PORTAL] Excel de %s rechazado: %s", solicitud.id, exc)
+            raise ErrorSolicitud(
+                "EXCEL_INVALIDO:%s" % codigo_publico(exc, "FORMATO_NO_RECONOCIDO")
+            ) from None
         return Path(preparado["directorio"]), str(preparado["perfil"])
 
     @staticmethod
@@ -376,7 +419,7 @@ class ServicioPortal:
             self.storage.subir(ruta, excel.read_bytes())
         except Exception as exc:
             logger.exception("[PORTAL] No se pudo subir el resultado de %s.", solicitud.id)
-            return None, str(exc)
+            return None, codigo_publico(exc, "STORAGE_NO_DISPONIBLE")
         return ruta, None
 
     def ejecutar(self, *, una_vez: bool = False, detener: threading.Event | None = None) -> None:
