@@ -162,7 +162,7 @@ def ejecutar_trabajador(
     ultimo_inicio,
 ):
     """Punto de entrada serializable para ``multiprocessing.spawn``."""
-    configurar_logging()
+    configurar_logging(consola=os.environ.get("SISTEMA_JUDICIAL_SERVICE_MODE") != "1")
     repo = RepositorioColaPostgres.desde_config(config_db)
     concurrencia = ConfiguracionConcurrencia.desde_config(config_concurrencia)
     procesador = ProcesadorCaso(

@@ -469,7 +469,7 @@ def ejecutar_servicio(ruta_config: Path, *, intervalo: int = 10, una_vez: bool =
     from src.configuracion_lotes import cargar_comun
     from src.logger_config import configurar_logging
 
-    configurar_logging()
+    configurar_logging(consola=os.environ.get("SISTEMA_JUDICIAL_SERVICE_MODE") != "1")
     ruta_config = Path(ruta_config).expanduser().resolve()
     config = cargar_comun(ruta_config)
     revision = consola.diagnostico(config)
