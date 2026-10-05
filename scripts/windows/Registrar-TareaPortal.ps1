@@ -2,6 +2,11 @@
 param([string]$Nombre = 'SistemaJudicialPortal')
 
 $ErrorActionPreference = 'Stop'
+$identidad = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-Object Security.Principal.WindowsPrincipal($identidad)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw 'Acceso denegado: abra PowerShell como administrador con ayuda de TI y vuelva a ejecutar este script.'
+}
 $app = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $runner = Join-Path $PSScriptRoot 'Iniciar-ServicioPortal.ps1'
 $almacen = Join-Path (Split-Path -Parent $app) 'private\credenciales.json'
