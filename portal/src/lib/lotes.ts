@@ -84,6 +84,12 @@ export const ERRORES_MAP: Record<string, string> = {
   'SOLICITUD_NO_EXISTE': 'La solicitud no existe',
   'SOLICITUD_FINALIZADA': 'El lote ya terminó y no se puede cancelar',
   'ROL_NO_AUTORIZADO': 'No tiene permiso para esta acción',
+  'REVISION_OBSOLETA': 'La revisión ya no es válida: hay una auditoría más nueva o ya fue resuelta',
+  'PROPUESTA_IA_INVALIDA': 'La propuesta de la IA no es válida para ser aceptada',
+  'EVIDENCIA_INVALIDA': 'Las evidencias de la IA no son válidas',
+  'CORRECCION_MANUAL_INVALIDA': 'Falta la etapa/fase válida o la observación para corregir manualmente',
+  'IDS_MANUALES_INESPERADOS': 'No se deben enviar etapa/fase con esta decisión',
+  'DECISION_INVALIDA': 'Decisión de revisión no válida',
 }
 
 export function calcularAvance(estado: EstadoEjecucion | null): number {
