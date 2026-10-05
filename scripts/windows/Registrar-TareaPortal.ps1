@@ -9,22 +9,24 @@ if (-not (Test-Path -LiteralPath $almacen)) {
     throw 'Configure primero las credenciales con la cuenta que ejecutara el servicio.'
 }
 $cuenta = (Get-Content -LiteralPath $almacen -Raw | ConvertFrom-Json).cuenta
-$credencial = Get-Credential -UserName $cuenta -Message 'Contrasena de Windows de la cuenta del servicio (no PIN)'
-if ($credencial.UserName -ne $cuenta) { throw 'La cuenta debe coincidir con la que cifro las credenciales.' }
+$seguroWindows = Read-Host -Prompt "Contrasena de Windows de $cuenta (no PIN)" -AsSecureString
+if ($seguroWindows.Length -eq 0) { throw 'No se recibio la contrasena de Windows.' }
 $accion = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
     -Argument ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $runner) -WorkingDirectory $app
 $disparador = New-ScheduledTaskTrigger -AtStartup
 $ajustes = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable `
     -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([timespan]::Zero) `
     -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-$claveWindows = $credencial.GetNetworkCredential().Password
+$puntero = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($seguroWindows)
 try {
+    $claveWindows = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($puntero)
     Register-ScheduledTask -TaskName $Nombre -Action $accion -Trigger $disparador `
         -Settings $ajustes -User $cuenta -Password $claveWindows -RunLevel Limited `
         -Description 'Motor de lotes del Portal de Gestion Judicial' -Force | Out-Null
 } finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($puntero)
+    $seguroWindows.Dispose()
     $claveWindows = $null
-    $credencial = $null
 }
 Write-Host "Tarea registrada: $Nombre"
 Write-Host 'TI debe confirmar que esta maquina no se suspende y que la cuenta puede iniciar tareas por lotes.'
