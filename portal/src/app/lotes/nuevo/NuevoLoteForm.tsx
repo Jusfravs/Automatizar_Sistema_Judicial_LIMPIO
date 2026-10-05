@@ -13,9 +13,11 @@ type Filtros = {
   estado_judicial: string
 }
 
+type CampoConError = keyof Filtros | 'file' | 'hoja' | 'parametro' | 'trabajadores'
+const ORDEN_CAMPOS: CampoConError[] = ['file', 'hoja', 'sucursal', 'parametro', 'trabajadores']
+
 export default function NuevoLoteForm() {
   const router = useRouter()
-  const supabase = createClient()
 
   const errorId = useId()
 
@@ -33,7 +35,11 @@ export default function NuevoLoteForm() {
 
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof Filtros | 'file' | 'hoja' | 'parametro' | 'trabajadores', string>>>({})
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<CampoConError, string>>>({})
+
+  const esSolo = modo === 'solo'
+  const trabajadoresEfectivos = esSolo ? 1 : trabajadores
+  const continuarEfectivo = esSolo ? false : continuar
 
   const validateField = (name: string, value: string | File | number | boolean | null): string | undefined => {
     switch (name) {
@@ -53,7 +59,7 @@ export default function NuevoLoteForm() {
         return undefined
       case 'parametro':
         if (modo !== 'pendientes' && typeof value === 'string' && !value.trim()) return 'El parámetro es obligatorio para este modo'
-        if (modo === 'solo' && typeof value === 'string' && (value.trim().length < 1 || value.trim().length > 60)) return 'El número de causa debe tener entre 1 y 60 caracteres'
+        if (modo === 'solo' && typeof value === 'string' && value.trim().length > 60) return 'El número de causa no puede superar 60 caracteres'
         if (modo === 'lote' && typeof value === 'string' && (!/^[0-9]{1,3}$/.test(value.trim()) || +value.trim() < 2 || +value.trim() > 100)) return 'El lote debe ser un número entre 2 y 100'
         return undefined
       case 'trabajadores':
@@ -75,103 +81,82 @@ export default function NuevoLoteForm() {
     })
   }
 
-  const validarFormulario = (): boolean => {
-    let hasError = false
-    const newErrors: typeof fieldErrors = {}
+  const validarFormulario = (): Partial<Record<CampoConError, string>> => {
+    const errores: Partial<Record<CampoConError, string>> = {}
+    const errorArchivo = validateField('file', file) ?? validateField('archivo_nombre', file?.name ?? '')
+    if (errorArchivo) errores.file = errorArchivo
+    const errorHoja = validateField('hoja', hoja)
+    if (errorHoja) errores.hoja = errorHoja
+    const errorSucursal = validateField('sucursal', filtros.sucursal)
+    if (errorSucursal) errores.sucursal = errorSucursal
+    const errorParametro = validateField('parametro', parametro)
+    if (errorParametro) errores.parametro = errorParametro
+    const errorTrabajadores = validateField('trabajadores', trabajadoresEfectivos)
+    if (errorTrabajadores) errores.trabajadores = errorTrabajadores
+    return errores
+  }
 
-    const fileError = validateField('file', file)
-    if (fileError) { newErrors.file = fileError; hasError = true }
-
-    const hojaError = validateField('hoja', hoja)
-    if (hojaError) { newErrors.hoja = hojaError; hasError = true }
-
-    const sucursalError = validateField('sucursal', filtros.sucursal)
-    if (sucursalError) { newErrors.sucursal = sucursalError; hasError = true }
-
-    const archivoNombreError = validateField('archivo_nombre', file?.name ?? '')
-    if (archivoNombreError) { newErrors.file = archivoNombreError; hasError = true }
-
-    const parametroError = validateField('parametro', parametro)
-    if (parametroError) { newErrors.parametro = parametroError; hasError = true }
-
-    const trabajadoresError = validateField('trabajadores', trabajadores)
-    if (trabajadoresError) { newErrors.trabajadores = trabajadoresError; hasError = true }
-
-    setFieldErrors(newErrors)
-    if (hasError) setError('Revisa los campos marcados')
-    return !hasError
+  async function limpiarArchivoHuerfano(ruta: string) {
+    const supabase = createClient()
+    try {
+      const { data, error: rmError } = await supabase.storage.from('lotes').remove([ruta])
+      if (rmError || !data?.length) {
+        console.warn('No se pudo limpiar el archivo huérfano:', rmError?.message ?? 'sin filas borradas')
+      }
+    } catch (err) {
+      console.warn('No se pudo limpiar el archivo huérfano:', err)
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
 
-    if (!validarFormulario()) {
-      const firstError = Object.values(fieldErrors)[0]
-      if (firstError) {
-        const firstField = Object.keys(fieldErrors)[0]
-        const el = document.getElementById(firstField)
-        el?.focus()
-      }
+    const errores = validarFormulario()
+    setFieldErrors(errores)
+    const primerCampo = ORDEN_CAMPOS.find((campo) => errores[campo])
+    if (primerCampo) {
+      setError('Revisa los campos marcados')
+      document.getElementById(primerCampo)?.focus()
       return
     }
+
     setLoading(true)
+    const supabase = createClient()
+    const id = crypto.randomUUID()
+    const archivoRuta = `entradas/${id}.xlsx`
+    let archivoSubido = false
 
     try {
-      const id = crypto.randomUUID()
-      const archivoRuta = `entradas/${id}.xlsx`
-      let uploadOk = false
-
-      try {
-        const fileToUpload = file!
-        const { error: uploadError } = await supabase.storage
-          .from('lotes')
-          .upload(archivoRuta, fileToUpload, {
-            contentType: XLSX_MIME,
-            upsert: false,
-          })
-
-        if (uploadError) {
-          setError(traducirErrorInterno(uploadError.message))
-          setLoading(false)
-          return
-        }
-        uploadOk = true
-      } catch (err) {
-        setError(traducirErrorInterno(err instanceof Error ? err.message : 'Error al subir archivo'))
+      const { error: uploadError } = await supabase.storage
+        .from('lotes')
+        .upload(archivoRuta, file!, { contentType: XLSX_MIME, upsert: false })
+      if (uploadError) {
+        console.error('No se pudo subir el archivo:', uploadError.message)
+        setError(traducirErrorInterno(uploadError.message))
         setLoading(false)
         return
       }
+      archivoSubido = true
 
-      const filtrosJson = {
-        sucursal: filtros.sucursal,
-        oficina: filtros.oficina,
-        estado_judicial: filtros.estado_judicial,
-      }
-
-      const { error: insertError } = await supabase
-        .from('solicitudes_lote')
-        .insert({
-          id,
-          archivo_ruta: archivoRuta,
-          archivo_nombre: file!.name,
-          hoja: hoja.trim() || null,
-          filtros: filtrosJson,
-          modo,
-          parametro: modo === 'pendientes' ? null : parametro.trim(),
-          trabajadores,
-          continuar,
-        })
-        .select()
-
+      const { error: insertError } = await supabase.from('solicitudes_lote').insert({
+        id,
+        archivo_ruta: archivoRuta,
+        archivo_nombre: file!.name,
+        hoja: hoja.trim() || null,
+        filtros: {
+          sucursal: filtros.sucursal.trim(),
+          oficina: filtros.oficina.trim(),
+          estado_judicial: filtros.estado_judicial.trim(),
+        },
+        modo,
+        parametro: modo === 'pendientes' ? null : parametro.trim(),
+        trabajadores: trabajadoresEfectivos,
+        continuar: continuarEfectivo,
+      })
       if (insertError) {
-        if (uploadOk) {
-          try {
-            await supabase.storage.from('lotes').remove([archivoRuta])
-          } catch (cleanupErr) {
-            console.warn('No se pudo limpiar archivo huérfano:', cleanupErr)
-          }
-        }
+        console.error('No se pudo crear la solicitud:', insertError.message)
+        await limpiarArchivoHuerfano(archivoRuta)
         setError(traducirErrorInterno(insertError.message))
         setLoading(false)
         return
@@ -180,7 +165,8 @@ export default function NuevoLoteForm() {
       router.push(`/lotes/${id}`)
       router.refresh()
     } catch (err) {
-      console.error('Error inesperado:', err)
+      console.error('Error inesperado al crear el lote:', err)
+      if (archivoSubido) await limpiarArchivoHuerfano(archivoRuta)
       setError('No se pudo completar la operación')
       setLoading(false)
     }
@@ -189,7 +175,7 @@ export default function NuevoLoteForm() {
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl space-y-6" noValidate>
       {error && (
-        <div id={errorId} className="mb-6 rounded bg-red-50 p-4 text-sm text-red-700" role="alert" aria-live="assertive">
+        <div id={errorId} className="mb-6 rounded bg-red-50 p-4 text-sm text-red-700" role="alert">
           {error}
         </div>
       )}
@@ -197,6 +183,7 @@ export default function NuevoLoteForm() {
       <fieldset className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <legend className="mb-4 text-lg font-medium text-gray-900">Archivo Excel</legend>
         <div className="space-y-2">
+          <label htmlFor="file" className="block text-sm font-medium text-gray-700">Archivo .xlsx</label>
           <input
             id="file"
             type="file"
@@ -212,7 +199,7 @@ export default function NuevoLoteForm() {
             className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           {fieldErrors.file && (
-            <p id={`${errorId}-file`} className="text-sm text-red-600" role="alert">{fieldErrors.file}</p>
+            <p id={`${errorId}-file`} className="text-sm text-red-600">{fieldErrors.file}</p>
           )}
           <p className="text-xs text-gray-500">
             Solo .xlsx, máximo 20 MB. Hoja opcional: se usa la primera si se deja vacía.
@@ -227,6 +214,7 @@ export default function NuevoLoteForm() {
 
       <fieldset className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <legend className="mb-4 text-lg font-medium text-gray-900">Hoja (opcional)</legend>
+        <label htmlFor="hoja" className="mb-1 block text-sm font-medium text-gray-700">Nombre de la hoja</label>
         <input
           id="hoja"
           type="text"
@@ -240,7 +228,7 @@ export default function NuevoLoteForm() {
           className="w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
         {fieldErrors.hoja && (
-          <p id={`${errorId}-hoja`} className="mt-1 text-sm text-red-600" role="alert">{fieldErrors.hoja}</p>
+          <p id={`${errorId}-hoja`} className="mt-1 text-sm text-red-600">{fieldErrors.hoja}</p>
         )}
       </fieldset>
 
@@ -260,7 +248,7 @@ export default function NuevoLoteForm() {
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             {fieldErrors.sucursal && (
-              <p id={`${errorId}-sucursal`} className="mt-1 text-sm text-red-600" role="alert">{fieldErrors.sucursal}</p>
+              <p id={`${errorId}-sucursal`} className="mt-1 text-sm text-red-600">{fieldErrors.sucursal}</p>
             )}
           </div>
           <div>
@@ -293,7 +281,7 @@ export default function NuevoLoteForm() {
         <div className="space-y-4">
           <fieldset>
             <legend className="mb-2 text-sm font-medium text-gray-700">Selecciona el modo</legend>
-            <div className="flex flex-wrap gap-6" role="radiogroup" aria-label="Modo de ejecución">
+            <div className="flex flex-wrap gap-6">
               {(['lote', 'solo', 'pendientes'] as Modo[]).map((m) => (
                 <label key={m} className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -304,7 +292,6 @@ export default function NuevoLoteForm() {
                     onChange={() => {
                       setModo(m)
                       clearFieldError('parametro')
-                      // No cambiar trabajadores al cambiar de modo
                     }}
                     disabled={loading}
                     className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
@@ -337,7 +324,7 @@ export default function NuevoLoteForm() {
                 className="mt-1 block w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               {fieldErrors.parametro && (
-                <p id={`${errorId}-parametro`} className="mt-1 text-sm text-red-600" role="alert">{fieldErrors.parametro}</p>
+                <p id={`${errorId}-parametro`} className="mt-1 text-sm text-red-600">{fieldErrors.parametro}</p>
               )}
             </div>
           )}
@@ -351,15 +338,18 @@ export default function NuevoLoteForm() {
               type="number"
               min="1"
               max="4"
-              value={trabajadores}
+              value={trabajadoresEfectivos}
               onChange={(e) => { setTrabajadores(parseInt(e.target.value, 10) || 1); clearFieldError('trabajadores') }}
-              disabled={loading}
+              disabled={loading || esSolo}
               aria-invalid={!!fieldErrors.trabajadores}
               aria-describedby={fieldErrors.trabajadores ? `${errorId}-trabajadores` : undefined}
               className="mt-1 block w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
+            {esSolo && (
+              <p className="mt-1 text-xs text-gray-500">Una sola causa se procesa con 1 trabajador.</p>
+            )}
             {fieldErrors.trabajadores && (
-              <p id={`${errorId}-trabajadores`} className="mt-1 text-sm text-red-600" role="alert">{fieldErrors.trabajadores}</p>
+              <p id={`${errorId}-trabajadores`} className="mt-1 text-sm text-red-600">{fieldErrors.trabajadores}</p>
             )}
           </div>
 

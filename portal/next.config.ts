@@ -1,6 +1,9 @@
 import type { NextConfig } from "next"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://kwofqyuyzqooepjiuiae.supabase.co'
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+if (!supabaseUrl) {
+  throw new Error('Falta NEXT_PUBLIC_SUPABASE_URL: la política de seguridad de contenido la necesita al construir.')
+}
 const supabaseWss = supabaseUrl.replace('https://', 'wss://')
 
 const csp = [
