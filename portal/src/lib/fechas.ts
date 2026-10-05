@@ -16,32 +16,25 @@ export function formatFecha(iso: string | null | undefined): string {
   }
 }
 
-/**
- * Formatea fechas procesales que pueden venir en dos formatos:
- * - ISO: '2021-06-05T00:39:21.000+00:00' -> formatea solo fecha dd/mm/aaaa
- * - 'dd/mm/aaaa': '18/12/2025' -> devuelve tal cual
- * - Otros: devuelve el texto original o '-' si está vacío
- */
+const DD_MM_AAAA = /^\d{2}\/\d{2}\/\d{4}$/
+const SOLO_FECHA_ISO = /^(\d{4})-(\d{2})-(\d{2})$/
+const ISO_CON_HORA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/
+
+// Las fechas procesales llegan como 'dd/mm/aaaa' o como ISO con zona; cualquier
+// otro texto se muestra tal cual en vez de dejar que Date lo interprete.
 export function formatFechaProcesal(valor: string | null | undefined): string {
-  if (!valor) return '-'
-  const v = valor.trim()
+  const v = valor?.trim() ?? ''
   if (!v) return '-'
-
-  // Detectar formato dd/mm/aaaa (con separador / o -)
-  const ddmmaaaa = /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/
-  if (ddmmaaaa.test(v)) return v
-
-  // Intentar parsear como ISO
-  try {
-    const d = new Date(v)
-    if (isNaN(d.getTime())) return v
-    return d.toLocaleDateString('es-ES', {
-      timeZone: 'America/Guayaquil',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    })
-  } catch {
-    return v
-  }
+  if (DD_MM_AAAA.test(v)) return v
+  const soloFecha = SOLO_FECHA_ISO.exec(v)
+  if (soloFecha) return `${soloFecha[3]}/${soloFecha[2]}/${soloFecha[1]}`
+  if (!ISO_CON_HORA.test(v)) return v
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return v
+  return d.toLocaleDateString('es-ES', {
+    timeZone: 'America/Guayaquil',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
 }
