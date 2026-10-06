@@ -13,12 +13,18 @@ if ($datos.version -ne 1 -or $datos.cuenta -ne $cuenta) {
 }
 
 $endpoint = (Read-Host 'Endpoint S3 de B2 (https://s3.REGION.backblazeb2.com)').Trim().TrimEnd('/')
+if ($endpoint -notmatch '^https://') { $endpoint = 'https://' + $endpoint }
+if ($endpoint -notmatch '^https://s3\.[a-z0-9-]+\.backblazeb2\.com$') {
+    throw 'Endpoint B2 invalido. Copie el campo Endpoint desde B2 Cloud Storage > Buckets.'
+}
 $bucket = (Read-Host 'Nombre del bucket privado de B2').Trim()
+if ($bucket -notmatch '^[a-z0-9][a-z0-9-]{4,48}[a-z0-9]$') {
+    throw 'Nombre del bucket invalido.'
+}
 $keyId = (Read-Host 'Key ID de la Application Key limitada al bucket').Trim()
+if (-not $keyId) { throw 'Falta el Key ID.' }
 $clave = Read-Host 'Application Key de B2' -AsSecureString
-if ($endpoint -notmatch '^https://s3\.[a-z0-9-]+\.backblazeb2\.com$' -or
-    $bucket -notmatch '^[a-z0-9][a-z0-9-]{4,48}[a-z0-9]$' -or
-    -not $keyId -or $clave.Length -eq 0) {
+if ($clave.Length -eq 0) {
     $clave.Dispose()
     throw 'Configuracion B2 incompleta o con formato invalido.'
 }
