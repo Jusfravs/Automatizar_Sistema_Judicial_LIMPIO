@@ -14,6 +14,7 @@ from src.servicio_portal import (
     ClienteStorage,
     ClienteStorageHibrido,
     ErrorSolicitud,
+    Latido,
     RepositorioSolicitudes,
     ServicioPortal,
     Solicitud,
@@ -97,6 +98,7 @@ class SolicitudesFalsas:
         self.consultas_cancelacion = 0
         self.cancelar_tras = cancelar_tras
         self.cerradas_para = None
+        self.latidos = []
 
     def reservar(self, worker_host):
         return self.pendientes.pop(0) if self.pendientes else None
@@ -111,6 +113,9 @@ class SolicitudesFalsas:
     def cerrar_interrumpidas(self, worker_host):
         self.cerradas_para = worker_host
         return 0
+
+    def registrar_latido(self, worker_host, estado, solicitud_id):
+        self.latidos.append((worker_host, estado, solicitud_id))
 
     @property
     def final(self):
@@ -368,6 +373,43 @@ class TestServicioPortal(unittest.TestCase):
         solicitudes = SolicitudesFalsas([])
         self.servicio(solicitudes).ejecutar(una_vez=True)
         self.assertEqual(solicitudes.cerradas_para, "servidor")
+        self.assertEqual(solicitudes.latidos[0], ("servidor", "ESPERANDO", None))
+
+    def test_latido_marca_procesando_durante_el_lote_y_vuelve_a_esperando(self):
+        (self.lote / "reporte_final.xlsx").write_bytes(b"final")
+        pedida = solicitud()
+        solicitudes = SolicitudesFalsas([pedida])
+        self.servicio(solicitudes).atender_una()
+        estados = [(estado, sid) for _, estado, sid in solicitudes.latidos]
+        self.assertEqual(estados, [("PROCESANDO", pedida.id), ("ESPERANDO", None)])
+
+    def test_latido_se_suspende_si_el_bucle_esperando_se_cuelga(self):
+        ahora = [1000.0]
+        solicitudes = SolicitudesFalsas([])
+        latido = Latido(solicitudes, "servidor", intervalo=10, reloj=lambda: ahora[0])
+        latido.latir()
+        ahora[0] += 61
+        latido.latir()
+        self.assertEqual(len(solicitudes.latidos), 1)
+        latido.vuelta()
+        latido.latir()
+        self.assertEqual(len(solicitudes.latidos), 2)
+
+    def test_latido_sigue_durante_un_lote_largo(self):
+        ahora = [1000.0]
+        solicitudes = SolicitudesFalsas([])
+        latido = Latido(solicitudes, "servidor", intervalo=10, reloj=lambda: ahora[0])
+        latido.marcar("PROCESANDO", "abc")
+        ahora[0] += 3600
+        latido.latir()
+        self.assertEqual(solicitudes.latidos[-1], ("servidor", "PROCESANDO", "abc"))
+
+    def test_falla_del_latido_no_detiene_el_lote(self):
+        (self.lote / "reporte_final.xlsx").write_bytes(b"final")
+        solicitudes = SolicitudesFalsas([solicitud()])
+        solicitudes.registrar_latido = MagicMock(side_effect=RuntimeError("BD_CAIDA"))
+        self.servicio(solicitudes).atender_una()
+        self.assertEqual(solicitudes.final["estado"], "COMPLETADA")
 
 
 class TestVerificarExcelSeguro(unittest.TestCase):

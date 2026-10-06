@@ -15,6 +15,7 @@ import {
 } from '@/components/ui'
 import { calcularAvance, COLUMNAS_ESTADO_EJECUCION, ESTADOS_ACTIVOS, type EstadoEjecucion } from '@/lib/lotes'
 import { formatFecha } from '@/lib/fechas'
+import { leerEstadoServidor, textoServidor, tonoServidor } from '@/lib/servidor'
 
 export const metadata = { title: 'Inicio' }
 
@@ -94,6 +95,10 @@ async function lotesEnCurso(supabase: Supabase) {
   return { lotes, avance, error: false }
 }
 
+function estadoServidor(supabase: Supabase) {
+  return leerEstadoServidor(supabase, Date.now())
+}
+
 function contarIndicadores(supabase: Supabase) {
   const hace7Dias = new Date(Date.now() - SIETE_DIAS_MS).toISOString()
   return Promise.all([
@@ -110,9 +115,10 @@ function contarIndicadores(supabase: Supabase) {
 
 export default async function InicioPage() {
   const supabase = await createClient()
-  const [[activos, completados, pendientes, errorFinal], enCurso] = await Promise.all([
+  const [[activos, completados, pendientes, errorFinal], enCurso, servidor] = await Promise.all([
     contarIndicadores(supabase),
     lotesEnCurso(supabase),
+    estadoServidor(supabase),
   ])
 
   const nPendientes = leerConteo('las revisiones pendientes', pendientes)
@@ -121,6 +127,20 @@ export default async function InicioPage() {
   return (
     <div className="space-y-6">
       <PageHeader titulo="Inicio" descripcion="Resumen de lotes y revisiones" acciones={nuevoLote} />
+
+      {servidor.tipo === 'caido' ? (
+        <Alert tono="peligro" rol="alert" titulo="El servidor de procesamiento no responde">
+          Los lotes nuevos quedarán en &ldquo;Solicitada&rdquo; hasta que el servicio vuelva a estar activo
+          {servidor.host ? ` en ${servidor.host}` : ''}. {textoServidor(servidor)}.
+        </Alert>
+      ) : (
+        <p className="flex items-center gap-2 text-sm text-muted">
+          Servidor de procesamiento:
+          <Badge tono={tonoServidor(servidor)} punto>
+            {textoServidor(servidor)}
+          </Badge>
+        </p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Indicador

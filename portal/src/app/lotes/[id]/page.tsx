@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { Alert } from '@/components/ui'
 import LoteDetalle from './LoteDetalle'
+import { leerEstadoServidor, textoServidor } from '@/lib/servidor'
 import {
   COLUMNAS_COLA_ERROR,
   COLUMNAS_ESTADO_EJECUCION,
@@ -13,6 +14,11 @@ import {
 } from '@/lib/lotes'
 
 export const metadata = { title: 'Detalle del lote' }
+
+// Fuera del componente: leer la hora actual durante el render no es puro.
+function estadoServidor(supabase: Awaited<ReturnType<typeof createClient>>) {
+  return leerEstadoServidor(supabase, Date.now())
+}
 
 type Props = {
   params: Promise<{ id: string }>
@@ -39,7 +45,7 @@ export default async function LoteIdPage({ params }: Props) {
   if (!data) notFound()
   const solicitud = data as SolicitudDetalle
 
-  const [estado, cola] = await Promise.all([
+  const [estado, cola, servidor] = await Promise.all([
     solicitud.perfil
       ? supabase
           .from('v_estado_ejecuciones')
@@ -58,6 +64,7 @@ export default async function LoteIdPage({ params }: Props) {
           .order('actualizado_en', { ascending: false })
           .limit(200)
       : null,
+    estadoServidor(supabase),
   ])
 
   if (estado?.error) console.error('No se pudo cargar el avance:', estado.error.message)
@@ -68,6 +75,7 @@ export default async function LoteIdPage({ params }: Props) {
       solicitud={solicitud}
       estadoEjecucion={(estado?.data as EstadoEjecucion | null) ?? null}
       colaErrores={(cola?.data as ColaError[] | null) ?? []}
+      avisoServidor={servidor.tipo === 'caido' ? textoServidor(servidor) : null}
     />
   )
 }

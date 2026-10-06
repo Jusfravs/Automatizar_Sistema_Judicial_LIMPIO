@@ -36,9 +36,11 @@ interface LoteDetalleProps {
   solicitud: SolicitudDetalle
   estadoEjecucion: EstadoEjecucion | null
   colaErrores: ColaError[]
+  /** Texto del estado del servidor si está caído; null si responde. */
+  avisoServidor: string | null
 }
 
-export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores }: LoteDetalleProps) {
+export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, avisoServidor }: LoteDetalleProps) {
   const [actual, setActual] = useState<SolicitudDetalle>(solicitud)
   const [estado, setEstado] = useState<EstadoEjecucion | null>(estadoEjecucion)
   const [cola, setCola] = useState<ColaError[]>(colaErrores)
@@ -197,6 +199,12 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores }:
       {esActivo && actual.cancelar && (
         <Alert tono="info" rol="status">
           Cancelación solicitada. El servicio detendrá el lote en breve.
+        </Alert>
+      )}
+      {avisoServidor && esActivo && !actual.tomado_en && (
+        <Alert tono="peligro" rol="alert" titulo="Este lote no avanzará por ahora">
+          El servidor de procesamiento no responde: {avisoServidor}. El lote se tomará solo en cuanto el servicio
+          vuelva a estar activo; no hace falta crearlo de nuevo.
         </Alert>
       )}
       {refreshError && (

@@ -811,6 +811,38 @@ export type Database = {
         }
         Relationships: []
       }
+      servicio_latido: {
+        Row: {
+          estado: string
+          iniciado_en: string
+          latido_en: string
+          solicitud_id: string | null
+          worker_host: string
+        }
+        Insert: {
+          estado: string
+          iniciado_en?: string
+          latido_en?: string
+          solicitud_id?: string | null
+          worker_host: string
+        }
+        Update: {
+          estado?: string
+          iniciado_en?: string
+          latido_en?: string
+          solicitud_id?: string | null
+          worker_host?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "servicio_latido_solicitud_id_fkey"
+            columns: ["solicitud_id"]
+            isOneToOne: false
+            referencedRelation: "solicitudes_lote"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       solicitudes_lote: {
         Row: {
           actualizado_en: string

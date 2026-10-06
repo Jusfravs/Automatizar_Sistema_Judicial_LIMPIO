@@ -14,6 +14,7 @@ import threading
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from time import monotonic
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -292,6 +293,19 @@ class RepositorioSolicitudes:
         )
         return bool(fila and fila["cancelar"])
 
+    def registrar_latido(self, worker_host: str, estado: str, solicitud_id: str | None) -> None:
+        self._ejecutar(
+            """
+            INSERT INTO public.servicio_latido (worker_host, estado, solicitud_id)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (worker_host) DO UPDATE
+               SET estado = EXCLUDED.estado,
+                   solicitud_id = EXCLUDED.solicitud_id,
+                   latido_en = now()
+            """,
+            (worker_host, estado, solicitud_id),
+        )
+
     def cerrar_interrumpidas(self, worker_host: str) -> int:
         """Cierra lo que este equipo dejó a medias si el servicio se detuvo."""
         return self._ejecutar(
@@ -304,6 +318,61 @@ class RepositorioSolicitudes:
             """,
             (worker_host,),
         )
+
+
+class Latido:
+    """Publica que el servicio sigue vivo, también mientras corre un lote de horas.
+
+    Va en un hilo propio porque el lote ocupa el hilo principal; un fallo al escribir
+    se registra y se reintenta en el siguiente ciclo, nunca detiene el servicio.
+    """
+
+    def __init__(self, solicitudes, worker_host: str, intervalo: float = 10.0, reloj=monotonic):
+        self.solicitudes = solicitudes
+        self.worker_host = worker_host
+        self.intervalo = intervalo
+        self.reloj = reloj
+        self.estado = "ESPERANDO"
+        self.solicitud_id: str | None = None
+        self._ultima_vuelta = reloj()
+        self._detener = threading.Event()
+        self._hilo = None
+
+    def marcar(self, estado: str, solicitud_id: str | None = None) -> None:
+        self.estado, self.solicitud_id = estado, solicitud_id
+        self.vuelta()
+        self.latir()
+
+    def vuelta(self) -> None:
+        """El bucle principal avisa que sigue consultando solicitudes."""
+        self._ultima_vuelta = self.reloj()
+
+    def latir(self) -> None:
+        # Esperando, el bucle da una vuelta cada `intervalo`: si lleva tres sin darla está
+        # colgado, y callar el latido es lo que permite que el portal lo note.
+        if self.estado == "ESPERANDO" and self.reloj() - self._ultima_vuelta > 3 * self.intervalo + 30:
+            logger.error("[PORTAL] El bucle del servicio no avanza; se suspende el latido.")
+            return
+        try:
+            self.solicitudes.registrar_latido(self.worker_host, self.estado, self.solicitud_id)
+        except Exception:
+            logger.warning("[PORTAL] No se pudo registrar el latido del servicio.", exc_info=True)
+
+    def _ciclo(self):
+        while not self._detener.wait(self.intervalo):
+            self.latir()
+
+    def __enter__(self):
+        self.latir()
+        self._hilo = threading.Thread(target=self._ciclo, name="latido-portal", daemon=True)
+        self._hilo.start()
+        return self
+
+    def __exit__(self, *_):
+        self._detener.set()
+        if self._hilo:
+            self._hilo.join(timeout=self.intervalo + 1)
+        return False
 
 
 class VigilanteCancelacion:
@@ -367,12 +436,17 @@ class ServicioPortal:
         self.intervalo = intervalo
         self.intervalo_cancelacion = intervalo_cancelacion
         self.interrumpir = interrumpir
+        self.latido = Latido(solicitudes, worker_host, intervalo)
 
     def atender_una(self) -> bool:
         solicitud = self.solicitudes.reservar(self.worker_host)
         if solicitud is None:
             return False
-        self.procesar(solicitud)
+        self.latido.marcar("PROCESANDO", solicitud.id)
+        try:
+            self.procesar(solicitud)
+        finally:
+            self.latido.marcar("ESPERANDO")
         return True
 
     def procesar(self, solicitud: Solicitud) -> None:
@@ -461,16 +535,18 @@ class ServicioPortal:
                            cerradas)
         logger.info("[PORTAL] Servicio activo en %s; consulta cada %ss.",
                     self.worker_host, self.intervalo)
-        while not detener.is_set():
-            try:
-                atendida = self.atender_una()
-            except Exception:
-                logger.exception("[PORTAL] No se pudieron consultar las solicitudes.")
-                atendida = False
-            if una_vez:
-                return
-            if not atendida:
-                detener.wait(self.intervalo)
+        with self.latido:
+            while not detener.is_set():
+                self.latido.vuelta()
+                try:
+                    atendida = self.atender_una()
+                except Exception:
+                    logger.exception("[PORTAL] No se pudieron consultar las solicitudes.")
+                    atendida = False
+                if una_vez:
+                    return
+                if not atendida:
+                    detener.wait(self.intervalo)
 
 
 def preparar_con_consola(base: Path):

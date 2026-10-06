@@ -66,6 +66,12 @@ class RepositorioColaPostgres:
             dbname=self.dbname,
             connect_timeout=self.connect_timeout,
             application_name="sistema_judicial",
+            # Sin keepalive, una conexión cortada por la red deja la consulta esperando
+            # para siempre y el servicio queda vivo pero sin atender lotes.
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
             **opciones_tls,
         )
 
