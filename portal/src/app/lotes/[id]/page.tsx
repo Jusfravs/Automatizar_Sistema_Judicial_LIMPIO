@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
+import { Alert } from '@/components/ui'
 import LoteDetalle from './LoteDetalle'
 import {
   COLUMNAS_COLA_ERROR,
@@ -10,6 +11,8 @@ import {
   type EstadoEjecucion,
   type SolicitudDetalle,
 } from '@/lib/lotes'
+
+export const metadata = { title: 'Detalle del lote' }
 
 type Props = {
   params: Promise<{ id: string }>
@@ -28,9 +31,9 @@ export default async function LoteIdPage({ params }: Props) {
   if (error) {
     console.error('No se pudo cargar el lote:', error.message)
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
+      <Alert tono="peligro" rol="alert">
         No se pudo cargar el lote. Intenta de nuevo en unos segundos.
-      </div>
+      </Alert>
     )
   }
   if (!data) notFound()

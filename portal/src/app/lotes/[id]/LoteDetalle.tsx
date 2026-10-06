@@ -1,16 +1,27 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import { useEffect, useState, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatFecha } from '@/lib/fechas'
+import { Alert } from '@/components/ui/Alert'
+import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { DataTable, type Columna } from '@/components/ui/DataTable'
+import { Dialog } from '@/components/ui/Dialog'
 import { EstadoBadge } from '@/components/ui/EstadoBadge'
+import { LineaTiempo, type Paso } from '@/components/ui/LineaTiempo'
+import { PageHeader } from '@/components/ui/PageHeader'
+import { ProgressBar } from '@/components/ui/ProgressBar'
+import { cx } from '@/lib/cx'
+import type { Json } from '@/lib/database.types'
 import {
   COLUMNAS_COLA_ERROR,
   COLUMNAS_ESTADO_EJECUCION,
   COLUMNAS_SOLICITUD,
   ESTADOS_ACTIVOS,
   ESTADOS_COLA_CON_ERROR,
+  ESTADO_ETIQUETAS,
   MODO_ETIQUETAS,
   calcularAvance,
   traducirErrorInterno,
@@ -36,7 +47,7 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores }:
   const [descargando, setDescargando] = useState(false)
   const [downloadError, setDownloadError] = useState('')
   const [refreshError, setRefreshError] = useState(false)
-  const dialogRef = useRef<HTMLDialogElement>(null)
+  const [confirmando, setConfirmando] = useState(false)
 
   const supabase = createClient()
   const esActivo = ESTADOS_ACTIVOS.includes(actual.estado)
@@ -102,7 +113,7 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores }:
 
   function abrirConfirmacion() {
     setCancelError('')
-    dialogRef.current?.showModal()
+    setConfirmando(true)
   }
 
   async function handleCancelar() {
@@ -120,7 +131,7 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores }:
       cancelar: true,
       ...(data === 'CANCELADA' ? { estado: 'CANCELADA' } : {}),
     }))
-    dialogRef.current?.close()
+    setConfirmando(false)
   }
 
   async function handleDescargar() {
@@ -137,211 +148,245 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores }:
     window.location.href = data.signedUrl
   }
 
+  const puedeCancelar = esActivo && !actual.cancelar
+  const fallido = ESTADOS_FALLIDOS.includes(actual.estado)
+
+  const acciones = (
+    <>
+      {actual.resultado_ruta && (
+        <Button onClick={handleDescargar} cargando={descargando}>
+          {descargando ? 'Generando enlace…' : 'Descargar resultado'}
+        </Button>
+      )}
+      {puedeCancelar && (
+        <Button variante="peligro" onClick={abrirConfirmacion}>
+          Cancelar lote
+        </Button>
+      )}
+    </>
+  )
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Lote {actual.id.slice(0, 8)}…</h1>
-          <p className="text-sm text-gray-500">{actual.archivo_nombre}</p>
-        </div>
-        <Link href="/lotes" className="text-sm font-medium text-blue-600 hover:text-blue-900">
-          ← Volver a lotes
-        </Link>
-      </div>
+      <PageHeader
+        titulo={actual.archivo_nombre}
+        descripcion={`Lote ${actual.id.slice(0, 8)} · creado el ${formatFecha(actual.creado_en)}`}
+        migas={[{ etiqueta: 'Lotes', href: '/lotes' }, { etiqueta: actual.archivo_nombre }]}
+        acciones={actual.resultado_ruta || puedeCancelar ? acciones : undefined}
+      />
 
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <dt className="text-sm text-gray-500">Estado</dt>
-            <dd className="mt-1">
-              <EstadoBadge tipo="lote" estado={actual.estado} />
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Modo</dt>
-            <dd className="mt-1 text-sm text-gray-900">{MODO_ETIQUETAS[actual.modo] ?? actual.modo}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Parámetro</dt>
-            <dd className="mt-1 font-mono text-sm text-gray-900">{actual.parametro || '-'}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Trabajadores</dt>
-            <dd className="mt-1 text-sm text-gray-900">{actual.trabajadores}</dd>
-          </div>
-          <div className="sm:col-span-2">
-            <dt className="text-sm text-gray-500">Filtros</dt>
-            <dd className="mt-1 font-mono text-sm text-gray-900">{JSON.stringify(actual.filtros ?? {})}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Hoja</dt>
-            <dd className="mt-1 text-sm text-gray-900">{actual.hoja || 'Primera hoja'}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Omitir procesadas</dt>
-            <dd className="mt-1 text-sm text-gray-900">{actual.continuar ? 'Sí' : 'No'}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Creado</dt>
-            <dd className="mt-1 text-sm text-gray-900">{formatFecha(actual.creado_en)}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Tomado</dt>
-            <dd className="mt-1 text-sm text-gray-900">{formatFecha(actual.tomado_en)}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Finalizado</dt>
-            <dd className="mt-1 text-sm text-gray-900">{formatFecha(actual.finalizado_en)}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Actualizado</dt>
-            <dd className="mt-1 text-sm text-gray-900">{formatFecha(actual.actualizado_en)}</dd>
-          </div>
-          {actual.mensaje && (
-            <div className="sm:col-span-4">
-              <dt className="text-sm text-gray-500">Mensaje</dt>
-              <dd className="mt-1 rounded bg-gray-50 p-3 text-sm text-gray-900">{actual.mensaje}</dd>
-            </div>
-          )}
-        </dl>
-      </div>
-
-      {estado && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-medium text-gray-900">Avance de la ejecución</h2>
-          <div className="space-y-2">
-            <div className="flex items-center gap-4">
-              <div
-                className="h-3 flex-1 overflow-hidden rounded-full bg-gray-200"
-                role="progressbar"
-                aria-valuenow={avance}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Avance del lote"
-              >
-                <div className="h-full bg-blue-600 transition-all duration-500" style={{ width: `${avance}%` }} />
-              </div>
-              <span className="w-16 text-right text-sm font-medium text-gray-900">{avance}%</span>
-            </div>
-            <dl className="grid grid-cols-2 gap-2 text-sm">
-              <dt className="text-gray-500">Total esperado</dt>
-              <dd className="text-gray-900">{estado.total_esperado ?? 0}</dd>
-              <dt className="text-gray-500">Atendidos</dt>
-              <dd className="text-gray-900">{estado.atendidos ?? 0}</dd>
-              <dt className="text-gray-500">En proceso</dt>
-              <dd className="text-gray-900">{estado.en_proceso ?? 0}</dd>
-              <dt className="text-gray-500">Pendientes</dt>
-              <dd className="text-gray-900">{estado.pendientes ?? 0}</dd>
-              <dt className="text-gray-500">Errores finales</dt>
-              <dd className="text-gray-900">{estado.errores_finales ?? 0}</dd>
-              <dt className="text-gray-500">Iniciado</dt>
-              <dd className="text-gray-900">{formatFecha(estado.iniciado_en)}</dd>
-              <dt className="text-gray-500">Finalizado</dt>
-              <dd className="text-gray-900">{formatFecha(estado.finalizado_en)}</dd>
-            </dl>
-          </div>
-        </div>
+      {downloadError && (
+        <Alert tono="peligro" rol="alert">
+          {downloadError}
+        </Alert>
       )}
-
-      {cola.length > 0 && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-medium text-gray-900">Causas con error</h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Número de causa</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Estado</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Intentos</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Último error</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {cola.map((c) => (
-                  <tr key={c.numero_causa} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-mono text-sm text-gray-900">{c.numero_causa}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{c.estado}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{c.intentos}</td>
-                    <td className="max-w-md truncate px-4 py-3 text-sm text-red-600" title={c.ultimo_error ?? undefined}>
-                      {c.ultimo_error ?? '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {esActivo && actual.cancelar && (
+        <Alert tono="info" rol="status">
+          Cancelación solicitada. El servicio detendrá el lote en breve.
+        </Alert>
       )}
-
       {refreshError && (
-        <p className="rounded bg-amber-50 p-3 text-sm text-amber-700" role="status">
+        <Alert tono="atencion" rol="status">
           No se pudo actualizar el avance. Se reintentará automáticamente.
-        </p>
+        </Alert>
+      )}
+      {actual.mensaje && (
+        <Alert tono={fallido ? 'peligro' : 'info'} titulo="Mensaje del servicio">
+          {actual.mensaje}
+        </Alert>
       )}
 
-      <div className="flex flex-wrap items-center gap-4">
-        {esActivo && !actual.cancelar && (
-          <button
-            type="button"
-            onClick={abrirConfirmacion}
-            className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-          >
-            Cancelar lote
-          </button>
-        )}
+      <Card>
+        <CardHeader titulo="Estado" acciones={<EstadoBadge tipo="lote" estado={actual.estado} />} />
+        <CardBody>
+          <LineaTiempo etiqueta="Estados del lote" pasos={pasosDelLote(actual)} />
+        </CardBody>
+      </Card>
 
-        {esActivo && actual.cancelar && (
-          <span className="text-sm text-gray-600" role="status">
-            Cancelación solicitada. El servicio detendrá el lote en breve.
-          </span>
-        )}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <Card>
+            <CardHeader titulo="Avance de la ejecución" />
+            <CardBody>
+              {estado ? (
+                <div className="space-y-5">
+                  <div className="flex items-end gap-4">
+                    <span className="text-4xl font-semibold tabular-nums text-fg">{avance} %</span>
+                    <ProgressBar className="mb-2 flex-1" valor={avance} etiqueta="Avance del lote" />
+                  </div>
+                  <dl className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+                    <Contador termino="Total" valor={estado.total_esperado} />
+                    <Contador termino="Atendidos" valor={estado.atendidos} />
+                    <Contador termino="En proceso" valor={estado.en_proceso} />
+                    <Contador termino="Pendientes" valor={estado.pendientes} />
+                    <Contador termino="Errores finales" valor={estado.errores_finales} peligro />
+                  </dl>
+                  <p className="text-xs text-muted">
+                    Iniciado: {formatFecha(estado.iniciado_en)} · Finalizado: {formatFecha(estado.finalizado_en)}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted">
+                  {esActivo ? 'El avance aparecerá cuando el servicio empiece a procesar el lote.' : 'Este lote no tiene datos de ejecución.'}
+                </p>
+              )}
+            </CardBody>
+          </Card>
 
-        {actual.resultado_ruta && (
-          <button
-            type="button"
-            onClick={handleDescargar}
-            disabled={descargando}
-            className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {descargando ? 'Generando enlace...' : 'Descargar resultado'}
-          </button>
-        )}
+          {cola.length > 0 && (
+            <section aria-labelledby="titulo-errores" className="space-y-3">
+              <h2 id="titulo-errores" className="text-base font-semibold text-fg">
+                Causas con error <span className="font-normal tabular-nums text-muted">({cola.length})</span>
+              </h2>
+              <DataTable
+                etiqueta="Causas con error"
+                filas={cola}
+                claveFila={(c) => c.numero_causa}
+                columnas={COLUMNAS_ERRORES}
+              />
+            </section>
+          )}
+        </div>
 
-        {downloadError && <p className="text-sm text-red-600" role="alert">{downloadError}</p>}
+        <Card className="self-start">
+          <CardHeader titulo="Configuración" />
+          <CardBody>
+            <dl className="space-y-3 text-sm">
+              <Dato termino="Modo">{MODO_ETIQUETAS[actual.modo] ?? actual.modo}</Dato>
+              <Dato termino="Parámetro">
+                <span className="font-mono">{actual.parametro || '—'}</span>
+              </Dato>
+              <Dato termino="Trabajadores">{actual.trabajadores}</Dato>
+              <Dato termino="Hoja">{actual.hoja || 'Primera hoja'}</Dato>
+              <Dato termino="Omitir procesadas">{actual.continuar ? 'Sí' : 'No'}</Dato>
+              <Dato termino="Filtros">
+                <span className="flex flex-wrap gap-1.5">
+                  {filtrosLegibles(actual.filtros).map((f) => (
+                    <Badge key={f}>{f}</Badge>
+                  ))}
+                </span>
+              </Dato>
+              <Dato termino="Última actualización">{formatFecha(actual.actualizado_en)}</Dato>
+            </dl>
+          </CardBody>
+        </Card>
       </div>
 
-      <dialog
-        ref={dialogRef}
-        aria-labelledby="cancelar-titulo"
-        aria-describedby="cancelar-descripcion"
-        className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl backdrop:bg-black/50"
+      <Dialog
+        abierto={confirmando}
+        alCerrar={() => {
+          if (!cancelando) setConfirmando(false)
+        }}
+        titulo="¿Cancelar este lote?"
+        descripcion={
+          actual.estado === 'EN_CURSO'
+            ? 'Ya está en curso: se pedirá al servicio que lo detenga.'
+            : 'El lote no se procesará.'
+        }
+        acciones={
+          <>
+            <Button variante="secundario" onClick={() => setConfirmando(false)} disabled={cancelando} autoFocus>
+              No, volver
+            </Button>
+            <Button variante="peligro" onClick={handleCancelar} cargando={cancelando}>
+              {cancelando ? 'Cancelando…' : 'Sí, cancelar'}
+            </Button>
+          </>
+        }
       >
-        <h2 id="cancelar-titulo" className="mb-4 text-lg font-semibold text-gray-900">Confirmar cancelación</h2>
-        <p id="cancelar-descripcion" className="mb-6 text-sm text-gray-600">
-          ¿Seguro que quieres cancelar este lote?
-          {actual.estado === 'EN_CURSO' && ' Ya está en curso: se pedirá al servicio que lo detenga.'}
-        </p>
-        {cancelError && <p className="mb-4 text-sm text-red-600" role="alert">{cancelError}</p>}
-        <div className="flex justify-end gap-3">
-          <button
-            type="button"
-            autoFocus
-            onClick={() => dialogRef.current?.close()}
-            disabled={cancelando}
-            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-          >
-            No, volver
-          </button>
-          <button
-            type="button"
-            onClick={handleCancelar}
-            disabled={cancelando}
-            className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {cancelando ? 'Cancelando...' : 'Sí, cancelar'}
-          </button>
-        </div>
-      </dialog>
+        {cancelError ? (
+          <Alert tono="peligro" rol="alert">
+            {cancelError}
+          </Alert>
+        ) : null}
+      </Dialog>
+    </div>
+  )
+}
+
+const ESTADOS_FALLIDOS: readonly string[] = ['FALLIDA', 'RECHAZADA', 'CANCELADA']
+const ORDEN_ESTADOS = ['SOLICITADA', 'TOMADA', 'PREPARANDO', 'EN_CURSO', 'COMPLETADA'] as const
+
+/** Pasos de la línea de tiempo. Un lote detenido termina en su estado final marcado como fallo. */
+function pasosDelLote(s: SolicitudDetalle): Paso[] {
+  const fecha = (clave: string) => {
+    if (clave === 'SOLICITADA') return formatFecha(s.creado_en)
+    if (clave === 'TOMADA' && s.tomado_en) return formatFecha(s.tomado_en)
+    if (clave === 'COMPLETADA' && s.finalizado_en) return formatFecha(s.finalizado_en)
+    return undefined
+  }
+
+  if (ESTADOS_FALLIDOS.includes(s.estado)) {
+    const pasos: Paso[] = [{ clave: 'SOLICITADA', etiqueta: ESTADO_ETIQUETAS.SOLICITADA, detalle: fecha('SOLICITADA'), estado: 'hecho' }]
+    if (s.tomado_en) pasos.push({ clave: 'TOMADA', etiqueta: ESTADO_ETIQUETAS.TOMADA, detalle: fecha('TOMADA'), estado: 'hecho' })
+    pasos.push({
+      clave: s.estado,
+      etiqueta: ESTADO_ETIQUETAS[s.estado] ?? s.estado,
+      detalle: s.finalizado_en ? formatFecha(s.finalizado_en) : undefined,
+      estado: 'fallo',
+    })
+    return pasos
+  }
+
+  const actualIdx = ORDEN_ESTADOS.indexOf(s.estado as (typeof ORDEN_ESTADOS)[number])
+  return ORDEN_ESTADOS.map((clave, i) => ({
+    clave,
+    etiqueta: ESTADO_ETIQUETAS[clave],
+    detalle: i <= actualIdx ? fecha(clave) : undefined,
+    estado: i < actualIdx || (i === actualIdx && clave === 'COMPLETADA') ? 'hecho' : i === actualIdx ? 'actual' : 'pendiente',
+  }))
+}
+
+const ETIQUETAS_FILTRO: Record<string, string> = {
+  sucursal: 'Sucursal',
+  oficina: 'Oficina',
+  estado_judicial: 'Estado judicial',
+}
+
+/** Filtros guardados como JSON → "Sucursal: TODAS"; los vacíos se muestran como "todas". */
+function filtrosLegibles(filtros: Json | null): string[] {
+  if (!filtros || typeof filtros !== 'object' || Array.isArray(filtros)) return ['Sin filtros']
+  return Object.entries(filtros).map(([clave, valor]) => {
+    const texto = typeof valor === 'string' || typeof valor === 'number' ? String(valor).trim() : ''
+    return `${ETIQUETAS_FILTRO[clave] ?? clave}: ${texto || 'todas'}`
+  })
+}
+
+const COLUMNAS_ERRORES: Columna<ColaError>[] = [
+  {
+    clave: 'causa',
+    encabezado: 'Número de causa',
+    principal: true,
+    celda: (c) => <span className="whitespace-nowrap font-mono text-sm">{c.numero_causa}</span>,
+  },
+  { clave: 'estado', encabezado: 'Estado', celda: (c) => <span className="text-sm">{c.estado}</span> },
+  { clave: 'intentos', encabezado: 'Intentos', className: 'tabular-nums', celda: (c) => c.intentos },
+  {
+    clave: 'error',
+    encabezado: 'Último error',
+    celda: (c) => (
+      <span className="line-clamp-2 max-w-md text-sm text-peligro-fg" title={c.ultimo_error ?? undefined}>
+        {c.ultimo_error ?? '—'}
+      </span>
+    ),
+  },
+]
+
+function Contador({ termino, valor, peligro = false }: { termino: string; valor: number | null; peligro?: boolean }) {
+  const n = valor ?? 0
+  return (
+    <div>
+      <dt className="text-xs text-muted">{termino}</dt>
+      <dd className={cx('text-xl font-semibold tabular-nums', peligro && n > 0 ? 'text-peligro-fg' : 'text-fg')}>{n}</dd>
+    </div>
+  )
+}
+
+function Dato({ termino, children }: { termino: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-muted">{termino}</dt>
+      <dd className="mt-0.5 break-words font-medium text-fg">{children}</dd>
     </div>
   )
 }
