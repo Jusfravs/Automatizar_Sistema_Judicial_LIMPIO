@@ -2,6 +2,9 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { Card, CardHeader, CardBody } from '@/components/ui/Card'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { Button } from '@/components/ui/Button'
 
 export default function SinAccesoPage() {
   const router = useRouter()
@@ -14,20 +17,29 @@ export default function SinAccesoPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-sm text-center">
-        <h1 className="mb-4 text-2xl font-semibold text-gray-900">
-          Tu usuario no tiene acceso al portal
-        </h1>
-        <p className="mb-6 text-gray-600">
-          No tienes un perfil activo o tu rol no permite acceder a esta aplicación.
-        </p>
-        <button
-          onClick={handleSignOut}
-          className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-        >
-          Cerrar sesión
-        </button>
+    <main className="flex min-h-screen items-center justify-center bg-bg p-4 sm:p-6">
+      <div className="w-full max-w-md">
+        <Card>
+          <CardHeader
+            titulo="Tu usuario no tiene acceso al portal"
+            nivel={2}
+          />
+          <CardBody>
+            <EmptyState
+              titulo="Tu usuario no tiene acceso al portal"
+              descripcion="Tu cuenta existe, pero no tiene un perfil activo. Pide al administrador del portal que active tu usuario y vuelve a iniciar sesión."
+              accion={
+                <Button
+                  variante="secundario"
+                  onClick={handleSignOut}
+                  className="w-full"
+                >
+                  Cerrar sesión
+                </Button>
+              }
+            />
+          </CardBody>
+        </Card>
       </div>
     </main>
   )
