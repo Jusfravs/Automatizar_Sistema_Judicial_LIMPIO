@@ -30,7 +30,7 @@ export async function leerEstadoServidor(supabase: Supabase, ahora: number): Pro
 }
 
 export function describirHace(ms: number | null): string {
-  if (ms === null) return 'nunca se ha conectado'
+  if (ms === null) return 'sin registro'
   const s = Math.round(ms / 1000)
   if (s < 60) return `hace ${s} s`
   const m = Math.round(s / 60)
@@ -48,6 +48,10 @@ export function tonoServidor(estado: EstadoServidor): Tono {
 
 export function textoServidor(estado: EstadoServidor): string {
   if (estado.tipo === 'activo') return estado.procesando ? 'Procesando un lote' : 'Activo, esperando lotes'
-  if (estado.tipo === 'caido') return `Sin conexión (último aviso ${describirHace(estado.hace)})`
+  if (estado.tipo === 'caido') {
+    return estado.hace === null
+      ? 'Sin conexión: el servicio aún no ha enviado ninguna señal'
+      : `Sin conexión: última señal ${describirHace(estado.hace)}`
+  }
   return 'Estado desconocido'
 }

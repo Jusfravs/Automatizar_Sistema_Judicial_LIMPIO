@@ -203,7 +203,7 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
       )}
       {avisoServidor && esActivo && !actual.tomado_en && (
         <Alert tono="peligro" rol="alert" titulo="Este lote no avanzará por ahora">
-          El servidor de procesamiento no responde: {avisoServidor}. El lote se tomará solo en cuanto el servicio
+          El servidor de procesamiento no responde ({avisoServidor.toLowerCase()}). El lote se tomará solo en cuanto el servicio
           vuelva a estar activo; no hace falta crearlo de nuevo.
         </Alert>
       )}
