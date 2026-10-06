@@ -1,6 +1,6 @@
 export function inicioPorRol(rol: string | null | undefined): string {
   if (rol && esRolValido(rol)) {
-    return '/lotes'
+    return '/inicio'
   }
   return '/sin-acceso'
 }
