@@ -18,6 +18,7 @@ import {
   nombreFase,
   primerValor,
   puedeAceptarIA,
+  textoPlano,
   type ActuacionDetalle,
   type AuditoriaDetalle,
   type DecisionRevision,
@@ -218,8 +219,8 @@ export default async function CasoPage({ params, searchParams }: Props) {
                             {a.carpeta ? <span className="text-xs text-muted">{a.carpeta}</span> : null}
                             {esEvidencia && <Badge tono="info">Evidencia IA</Badge>}
                           </div>
-                          <p className="text-sm font-medium text-fg">{a.titulo}</p>
-                          <DetalleActuacion texto={a.detalle} />
+                          <DetalleActuacion texto={textoPlano(a.titulo)} destacado />
+                          {a.detalle ? <DetalleActuacion texto={textoPlano(a.detalle)} /> : null}
                         </div>
                       </li>
                     )

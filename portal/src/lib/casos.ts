@@ -137,3 +137,33 @@ export function primerValor(valor: string | string[] | undefined): string {
 export function leerPagina(valor: string): number {
   return /^[1-9]\d{0,5}$/.test(valor) ? Number(valor) : 1
 }
+
+const ENTIDADES: Record<string, string> = {
+  nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", ordm: 'º', ordf: 'ª', deg: '°',
+  aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú', ntilde: 'ñ', uuml: 'ü',
+  Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', Ntilde: 'Ñ', Uuml: 'Ü',
+  iexcl: '¡', iquest: '¿', laquo: '«', raquo: '»', ndash: '–', mdash: '—', hellip: '…',
+}
+
+// Algunas actuaciones de e-SATJE llegan con el HTML del editor del juzgado. Se muestra como
+// texto plano (nunca se interpreta como HTML): saltos de párrafo conservados y entidades decodificadas.
+export function textoPlano(valor: string | null | undefined): string {
+  if (!valor) return ''
+  return valor
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&#x([0-9a-f]{1,6});/gi, (m, h: string) => {
+      const n = parseInt(h, 16)
+      return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : m
+    })
+    .replace(/&#(\d{1,7});/g, (m, d: string) => {
+      const n = Number(d)
+      return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : m
+    })
+    .replace(/&([a-zA-Z]+);/g, (m, nombre: string) => ENTIDADES[nombre] ?? m)
+    .replace(/[ \t\u00a0]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
