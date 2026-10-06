@@ -5,6 +5,13 @@ if (!supabaseUrl) {
   throw new Error('Falta NEXT_PUBLIC_SUPABASE_URL: la política de seguridad de contenido la necesita al construir.')
 }
 const supabaseWss = supabaseUrl.replace('https://', 'wss://')
+const b2Endpoint = process.env.NEXT_PUBLIC_LOTE_STORAGE === 'b2'
+  ? process.env.B2_ENDPOINT?.replace(/\/$/, '')
+  : undefined
+if (process.env.NEXT_PUBLIC_LOTE_STORAGE === 'b2' &&
+    !/^https:\/\/s3\.[a-z0-9-]+\.backblazeb2\.com$/i.test(b2Endpoint ?? '')) {
+  throw new Error('Falta B2_ENDPOINT valido para permitir la subida desde el navegador.')
+}
 
 const csp = [
   "default-src 'self'",
@@ -12,7 +19,7 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
-  `connect-src 'self' ${supabaseUrl} ${supabaseWss}`,
+  `connect-src 'self' ${supabaseUrl} ${supabaseWss}${b2Endpoint ? ` ${b2Endpoint}` : ''}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
