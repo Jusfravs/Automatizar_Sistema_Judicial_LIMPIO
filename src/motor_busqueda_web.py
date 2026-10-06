@@ -3184,7 +3184,7 @@ class BotJudicialTransaccional(BotJudicial):
             raise RuntimeError("RETORNO_BUSCADOR_YA_INTENTADO")
         contexto = {
             "iniciado": True, "finalizado": False, "confirmado": False,
-            "clicks": 0, "go_back": 0, "recargas": 0, "estrategia": None,
+            "clicks": 0, "go_back": 0, "recargas": 0, "goto": 0, "estrategia": None,
             "url_inicial": self.page.url, "url_final": self.page.url,
             "candidatos": [],
         }
@@ -3307,6 +3307,27 @@ class BotJudicialTransaccional(BotJudicial):
                 return True
             except Exception as exc:
                 contexto["error_go_back"] = str(exc)
+        # Último recurso: abrir el buscador por URL. La sesión del contexto se conserva
+        # y el formulario de una carga limpia es el mismo que usa la primera búsqueda.
+        if self.url_portal:
+            contexto.update({
+                "goto": 1,
+                "estrategia": "%s+goto_buscador" % (contexto.get("estrategia") or "control"),
+            })
+            try:
+                self._goto_navegacion(
+                    self.url_portal,
+                    "fallback_abrir_buscador",
+                    wait_until="domcontentloaded",
+                    timeout=self.navegacion["retorno_buscador_timeout_ms"],
+                )
+                diagnostico = self._esperar_buscador_listo(causa)
+                contexto.update({"finalizado": True, "confirmado": True,
+                                 "url_final": diagnostico.get("url"),
+                                 "diagnostico_final": diagnostico})
+                return True
+            except Exception as exc:
+                contexto["error_goto"] = str(exc)
         diagnostico = self._diagnosticar_buscador()
         contexto.update({"finalizado": True, "url_final": diagnostico.get("url"),
                          "diagnostico_final": diagnostico,

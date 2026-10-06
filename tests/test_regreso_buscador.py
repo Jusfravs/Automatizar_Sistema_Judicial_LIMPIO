@@ -264,6 +264,59 @@ class RetornoBuscadorTests(unittest.TestCase):
         self.assertEqual(control.clicks, 1)
         self.assertEqual(pagina.go_backs, 1)
 
+    def _bot_sin_salida(self, pagina):
+        """Bot cuyo botón Regresar y go_back no cambian de pantalla."""
+        bot = self.crear_bot(pagina)
+        bot.url_portal = "https://ejemplo.local/busqueda-filtros"
+        pagina.go_back = lambda: setattr(pagina, "go_backs", pagina.go_backs + 1)
+        bot._diagnosticar_buscador = lambda: self.diagnostico(
+            pagina.url.endswith("busqueda-filtros"), pagina.url
+        )
+
+        def esperar(causa):
+            diagnostico = bot._diagnosticar_buscador()
+            if not diagnostico["listo"]:
+                raise RuntimeError("SIN_TRANSICION")
+            return diagnostico
+
+        bot._esperar_buscador_listo = esperar
+        return bot
+
+    def test_si_regresar_y_go_back_fallan_abre_el_buscador_por_url(self):
+        control = ControlFalso()
+        pagina = PaginaRetornoFalsa(botones=[control])
+        visitas = []
+
+        def goto(url, **kwargs):
+            visitas.append(url)
+            pagina.url = url
+            pagina.campos = 1
+
+        pagina.goto = goto
+        bot = self._bot_sin_salida(pagina)
+
+        self.assertTrue(bot._volver_al_buscador(CAUSA))
+        self.assertEqual(visitas, ["https://ejemplo.local/busqueda-filtros"])
+        self.assertEqual(pagina.go_backs, 1)
+        contexto = bot._retorno_buscador_actual
+        self.assertTrue(contexto["confirmado"])
+        self.assertEqual(contexto["goto"], 1)
+        self.assertTrue(contexto["estrategia"].endswith("+goto_buscador"))
+
+    def test_si_tambien_falla_la_url_conserva_retorno_buscador_error(self):
+        pagina = PaginaRetornoFalsa(botones=[ControlFalso()])
+
+        def goto(url, **kwargs):
+            raise RuntimeError("SIN_RED")
+
+        pagina.goto = goto
+        bot = self._bot_sin_salida(pagina)
+        bot._guardar_evidencia_retorno = lambda causa, contexto: None
+
+        with self.assertRaisesRegex(RuntimeError, "RETORNO_BUSCADOR_ERROR"):
+            bot._volver_al_buscador(CAUSA)
+        self.assertEqual(bot._retorno_buscador_actual["error_goto"], "SIN_RED")
+
     def test_control_directo_al_buscador_tiene_prioridad(self):
         pagina = PaginaRetornoFalsa()
 
