@@ -1,9 +1,16 @@
+import { PageHeader } from '@/components/ui'
 import NuevoLoteForm from './NuevoLoteForm'
+
+export const metadata = { title: 'Nuevo lote' }
 
 export default function NuevoLotePage() {
   return (
-    <div className="p-6">
-      <h1 className="mb-6 text-2xl font-semibold text-gray-900">Nuevo lote</h1>
+    <div className="space-y-6">
+      <PageHeader
+        titulo="Nuevo lote"
+        descripcion="Sube el Excel de causas y elige cómo procesarlo."
+        migas={[{ etiqueta: 'Lotes', href: '/lotes' }, { etiqueta: 'Nuevo lote' }]}
+      />
       <NuevoLoteForm />
     </div>
   )
