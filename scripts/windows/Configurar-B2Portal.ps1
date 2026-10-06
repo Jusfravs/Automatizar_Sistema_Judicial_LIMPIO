@@ -44,7 +44,9 @@ try {
     Push-Location $app
     try {
         & $python -m scripts.verificar_b2
-        if ($LASTEXITCODE -ne 0) { throw 'No se pudo verificar B2; las credenciales anteriores siguen intactas.' }
+        if ($LASTEXITCODE -ne 0) {
+            throw 'No se pudo verificar B2; revise la linea JSON anterior (etapa, codigo y http). Las credenciales anteriores siguen intactas.'
+        }
     } finally {
         Pop-Location
     }
