@@ -29,14 +29,9 @@ const reglaColores = (severidad) => [
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Pantallas heredadas: aviso mientras dura la migración. Pasa a "error" al cerrar V5.
+  // Solo tokens del sistema de diseño: cualquier color suelto rompe el lint.
   {
-    files: ["src/app/**/*.{ts,tsx}"],
-    rules: { "no-restricted-syntax": reglaColores("warn") },
-  },
-  // Código nuevo del sistema: ya está limpio, así que la barrera es dura desde ahora.
-  {
-    files: ["src/components/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
+    files: ["src/app/**/*.{ts,tsx}", "src/components/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
     rules: { "no-restricted-syntax": reglaColores("error") },
   },
   // Override default ignores of eslint-config-next.
