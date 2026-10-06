@@ -4,7 +4,7 @@ import { useState, FormEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { inicioPorRol } from '@/lib/roles'
-import { Card, CardHeader, CardBody } from '@/components/ui/Card'
+import { Card, CardBody } from '@/components/ui/Card'
 import { Field, a11yCampo } from '@/components/ui/Field'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
@@ -65,94 +65,80 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen bg-bg">
-      {/* Panel izquierdo: marca (solo lg+) */}
-      <aside className="hidden lg:flex lg:w-[40%] flex-col items-center justify-center bg-nav text-on-nav px-8 py-12">
-        <div className="flex flex-col items-center max-w-xs">
-          <div className="flex items-center gap-3 mb-6">
-            <h1 className="font-serif text-3xl font-semibold">Gestión Judicial</h1>
-            <span className="h-12 w-px bg-accent" aria-hidden="true" />
+      <aside className="hidden flex-col justify-center bg-nav px-12 py-12 text-on-nav lg:flex lg:w-2/5">
+        <div className="max-w-sm space-y-4">
+          <div className="flex items-center gap-3">
+            <span aria-hidden="true" className="h-10 w-1.5 shrink-0 rounded-full bg-accent" />
+            <p className="font-serif text-4xl font-semibold tracking-tight">Gestión Judicial</p>
           </div>
-          <p className="text-on-nav/70 text-center text-sm leading-relaxed">
-            Consulta y clasificación de causas judiciales
-          </p>
+          <p className="text-base leading-relaxed text-on-nav/80">Consulta y clasificación de causas judiciales</p>
         </div>
       </aside>
 
-      {/* Panel derecho: formulario */}
-      <div className="flex w-full lg:w-[60%] items-center justify-center p-4 sm:p-6 lg:p-12">
-        <div className="w-full max-w-sm">
-          <Card>
-            <CardHeader
-              titulo="Iniciar sesión"
-              descripcion="Usa tu cuenta del portal"
-              nivel={2}
-            />
-            <CardBody className="space-y-4">
+      <div className="flex w-full flex-col items-center justify-center gap-8 p-4 sm:p-6 lg:w-3/5 lg:p-12">
+        <div className="flex items-center gap-2.5 lg:hidden">
+          <span aria-hidden="true" className="h-6 w-1 shrink-0 rounded-full bg-accent" />
+          <p className="font-serif text-xl font-semibold tracking-tight text-fg">Gestión Judicial</p>
+        </div>
+
+        <Card className="w-full max-w-sm">
+          <CardBody className="space-y-6">
+            <div className="space-y-1">
+              <h1 className="font-serif text-2xl font-semibold text-fg">Iniciar sesión</h1>
+              <p className="text-sm text-muted">Usa tu cuenta del portal</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <Field label="Correo electrónico" htmlFor="email">
+                <Input
+                  {...a11yCampo('email', {})}
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading}
+                />
+              </Field>
+
+              <Field label="Contraseña" htmlFor="password">
+                <div className="relative">
+                  <Input
+                    {...a11yCampo('password', {})}
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}
+                    className="pr-24"
+                  />
+                  <Button
+                    type="button"
+                    variante="fantasma"
+                    tamano="sm"
+                    onClick={togglePassword}
+                    aria-pressed={showPassword}
+                    aria-controls="password"
+                    className="absolute right-1 top-1/2 -translate-y-1/2"
+                  >
+                    {showPassword ? 'Ocultar' : 'Mostrar'}
+                  </Button>
+                </div>
+              </Field>
+
               {error && (
                 <Alert tono="peligro" rol="alert">
                   {error}
                 </Alert>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <Field
-                  label="Correo electrónico"
-                  htmlFor="email"
-                  ayuda="Tu correo institucional"
-                  error={undefined}
-                >
-                  <Input
-                    {...a11yCampo('email', { ayuda: 'Tu correo institucional' })}
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={loading}
-                  />
-                </Field>
-
-                <Field
-                  label="Contraseña"
-                  htmlFor="password"
-                  ayuda="Tu contraseña del portal"
-                  error={undefined}
-                >
-                  <div className="relative">
-                    <Input
-                      {...a11yCampo('password', { ayuda: 'Tu contraseña del portal' })}
-                      type={showPassword ? 'text' : 'password'}
-                      autoComplete="current-password"
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      disabled={loading}
-                    />
-                    <Button
-                      type="button"
-                      variante="fantasma"
-                      tamano="sm"
-                      onClick={togglePassword}
-                      aria-pressed={showPassword}
-                      aria-controls="password"
-                      className="absolute right-3 top-1/2 -translate-y-1/2"
-                    >
-                      {showPassword ? 'Ocultar' : 'Mostrar'}
-                    </Button>
-                  </div>
-                </Field>
-
-                <Button
-                  type="submit"
-                  cargando={loading}
-                  className="w-full"
-                >
-                  {loading ? 'Iniciando sesión…' : 'Iniciar sesión'}
-                </Button>
-              </form>
-            </CardBody>
-          </Card>
-        </div>
+              <Button type="submit" cargando={loading} className="w-full">
+                {loading ? 'Iniciando sesión…' : 'Iniciar sesión'}
+              </Button>
+            </form>
+          </CardBody>
+        </Card>
       </div>
     </main>
   )
