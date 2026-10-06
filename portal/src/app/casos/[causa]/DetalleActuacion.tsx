@@ -1,6 +1,8 @@
 'use client'
 
 import { useId, useState } from 'react'
+import { cx } from '@/lib/cx'
+import { FOCO } from '@/components/ui/estilos'
 
 const LONGITUD_RESUMEN = 120
 
@@ -9,7 +11,7 @@ export default function DetalleActuacion({ texto }: { texto: string }) {
   const id = useId()
   return (
     <div>
-      <p id={id} className={`whitespace-pre-line text-sm text-gray-900 ${abierto ? '' : 'line-clamp-2'}`}>
+      <p id={id} className={cx('whitespace-pre-line text-sm text-fg', !abierto && 'line-clamp-2')}>
         {texto}
       </p>
       {texto.length > LONGITUD_RESUMEN && (
@@ -18,7 +20,7 @@ export default function DetalleActuacion({ texto }: { texto: string }) {
           aria-expanded={abierto}
           aria-controls={id}
           onClick={() => setAbierto((v) => !v)}
-          className="mt-1 text-xs text-blue-600 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className={cx('mt-1 rounded-control text-xs font-medium text-primary hover:underline', FOCO)}
         >
           {abierto ? 'Ver menos' : 'Ver más'}
         </button>

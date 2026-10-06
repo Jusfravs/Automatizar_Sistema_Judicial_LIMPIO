@@ -11,11 +11,13 @@ import {
   type Etapa,
   type Fase,
 } from '@/lib/casos'
+import { Alert } from '@/components/ui/Alert'
+import { Button } from '@/components/ui/Button'
+import { Radio } from '@/components/ui/Radio'
+import { Select } from '@/components/ui/Select'
+import { Textarea } from '@/components/ui/Textarea'
 
 const MAX_OBSERVACION = 1000
-const CLASE_CAMPO =
-  'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
-
 type Campo = 'decision' | 'etapa' | 'fase' | 'observacion'
 
 interface RevisionFormProps {
@@ -100,47 +102,54 @@ export default function RevisionForm({ auditoriaId, permiteAceptarIA, etapas, fa
 
   return (
     <div className="space-y-4">
-      {confirmacion && <p className="rounded bg-green-50 p-3 text-sm text-green-700" role="status">{confirmacion}</p>}
+      {confirmacion && (
+        <Alert tono="exito" rol="status">
+          {confirmacion}
+        </Alert>
+      )}
       <form onSubmit={enviar} className="space-y-4" noValidate>
-        {errorGeneral && <p className="rounded bg-red-50 p-3 text-sm text-red-700" role="alert">{errorGeneral}</p>}
+        {errorGeneral && (
+          <Alert tono="peligro" rol="alert">
+            {errorGeneral}
+          </Alert>
+        )}
 
         <fieldset aria-describedby={errores.decision ? `${id}-decision-error` : undefined}>
-          <legend className="mb-3 text-sm font-medium text-gray-700">Decisión</legend>
-          <div className="flex flex-col gap-2">
+          <legend className="mb-2 text-sm font-medium text-muted">Decisión</legend>
+          <div className="flex flex-col">
             {DECISIONES_REVISION.map((d) => {
               const deshabilitada = d === 'ACEPTAR_IA' && !permiteAceptarIA
               return (
-                <label key={d} className={`flex items-center gap-2 ${deshabilitada ? 'cursor-not-allowed text-gray-400' : 'cursor-pointer text-gray-900'}`}>
-                  <input
-                    type="radio"
-                    name={`${id}-decision`}
-                    value={d}
-                    checked={decision === d}
-                    disabled={enviando || deshabilitada}
-                    onChange={() => {
-                      setDecision(d)
-                      setErrores((prev) => ({ ...prev, decision: undefined }))
-                    }}
-                    className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="text-sm">
-                    {DECISION_ETIQUETAS[d]}
-                    {deshabilitada && ' (no disponible: la IA no propuso un cambio con evidencias)'}
-                  </span>
-                </label>
+                <Radio
+                  key={d}
+                  name={`${id}-decision`}
+                  value={d}
+                  checked={decision === d}
+                  disabled={enviando || deshabilitada}
+                  onChange={() => {
+                    setDecision(d)
+                    setErrores((prev) => ({ ...prev, decision: undefined }))
+                  }}
+                  label={
+                    <>
+                      {DECISION_ETIQUETAS[d]}
+                      {deshabilitada && ' (no disponible: la IA no propuso un cambio con evidencias)'}
+                    </>
+                  }
+                />
               )
             })}
           </div>
-          {errores.decision && <p id={`${id}-decision-error`} className="mt-1 text-sm text-red-600">{errores.decision}</p>}
+          {errores.decision && <p id={`${id}-decision-error`} className="mt-1 text-sm font-medium text-peligro-fg">{errores.decision}</p>}
         </fieldset>
 
         {corrigiendo && (
           <fieldset className="space-y-4">
-            <legend className="text-sm font-medium text-gray-700">Corrección manual</legend>
+            <legend className="text-sm font-semibold text-fg">Corrección manual</legend>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor={`${id}-etapa`} className="block text-sm font-medium text-gray-700">Etapa</label>
-                <select
+                <label htmlFor={`${id}-etapa`} className="mb-1.5 block text-sm font-medium text-muted">Etapa</label>
+                <Select
                   id={`${id}-etapa`}
                   value={etapa}
                   disabled={enviando}
@@ -151,16 +160,15 @@ export default function RevisionForm({ auditoriaId, permiteAceptarIA, etapas, fa
                     setFase('')
                     setErrores((prev) => ({ ...prev, etapa: undefined, fase: undefined }))
                   }}
-                  className={CLASE_CAMPO}
                 >
                   <option value="">Selecciona una etapa</option>
                   {etapas.map((e) => <option key={e.eta_id} value={e.eta_id}>{e.nombre}</option>)}
-                </select>
-                {errores.etapa && <p id={`${id}-etapa-error`} className="mt-1 text-sm text-red-600">{errores.etapa}</p>}
+                </Select>
+                {errores.etapa && <p id={`${id}-etapa-error`} className="mt-1 text-sm font-medium text-peligro-fg">{errores.etapa}</p>}
               </div>
               <div>
-                <label htmlFor={`${id}-fase`} className="block text-sm font-medium text-gray-700">Fase</label>
-                <select
+                <label htmlFor={`${id}-fase`} className="mb-1.5 block text-sm font-medium text-muted">Fase</label>
+                <Select
                   id={`${id}-fase`}
                   value={fase}
                   disabled={enviando || !etapa}
@@ -170,19 +178,18 @@ export default function RevisionForm({ auditoriaId, permiteAceptarIA, etapas, fa
                     setFase(e.target.value)
                     setErrores((prev) => ({ ...prev, fase: undefined }))
                   }}
-                  className={CLASE_CAMPO}
                 >
                   <option value="">{etapa ? 'Selecciona una fase' : 'Elige primero la etapa'}</option>
                   {fasesDeEtapa.map((f) => <option key={f.fas_id} value={f.fas_id}>{f.nombre}</option>)}
-                </select>
-                {errores.fase && <p id={`${id}-fase-error`} className="mt-1 text-sm text-red-600">{errores.fase}</p>}
+                </Select>
+                {errores.fase && <p id={`${id}-fase-error`} className="mt-1 text-sm font-medium text-peligro-fg">{errores.fase}</p>}
               </div>
             </div>
             <div>
-              <label htmlFor={`${id}-observacion`} className="block text-sm font-medium text-gray-700">
+              <label htmlFor={`${id}-observacion`} className="mb-1.5 block text-sm font-medium text-muted">
                 Observación (obligatoria, máximo {MAX_OBSERVACION} caracteres)
               </label>
-              <textarea
+              <Textarea
                 id={`${id}-observacion`}
                 value={observacion}
                 maxLength={MAX_OBSERVACION}
@@ -194,21 +201,16 @@ export default function RevisionForm({ auditoriaId, permiteAceptarIA, etapas, fa
                   setObservacion(e.target.value)
                   setErrores((prev) => ({ ...prev, observacion: undefined }))
                 }}
-                className={CLASE_CAMPO}
               />
-              {errores.observacion && <p id={`${id}-observacion-error`} className="mt-1 text-sm text-red-600">{errores.observacion}</p>}
-              <p id={`${id}-contador`} className="text-right text-xs text-gray-500">{observacion.length}/{MAX_OBSERVACION}</p>
+              {errores.observacion && <p id={`${id}-observacion-error`} className="mt-1 text-sm font-medium text-peligro-fg">{errores.observacion}</p>}
+              <p id={`${id}-contador`} className="mt-1 text-right text-xs tabular-nums text-muted">{observacion.length}/{MAX_OBSERVACION}</p>
             </div>
           </fieldset>
         )}
 
-        <button
-          type="submit"
-          disabled={enviando}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {enviando ? 'Registrando...' : 'Registrar revisión'}
-        </button>
+        <Button type="submit" cargando={enviando}>
+          {enviando ? 'Registrando…' : 'Registrar revisión'}
+        </Button>
       </form>
     </div>
   )

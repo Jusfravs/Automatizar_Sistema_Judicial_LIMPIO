@@ -1,7 +1,9 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { formatFecha, formatFechaProcesal } from '@/lib/fechas'
+import { cx } from '@/lib/cx'
+import type { Tono } from '@/lib/tonos'
+import { Alert, Badge, Card, CardBody, CardHeader, EstadoBadge, PageHeader, Pagination } from '@/components/ui'
 import {
   ACTUACIONES_POR_PAGINA,
   AUDITORIA_DECISION_ETIQUETAS,
@@ -10,7 +12,6 @@ import {
   COLUMNAS_EXPEDIENTE_DETALLE,
   COLUMNAS_REVISION,
   DECISION_ETIQUETAS,
-  ESTADO_CASO_ETIQUETAS,
   leerDecisionIA,
   leerPagina,
   nombreEtapa,
@@ -29,6 +30,8 @@ import {
 import DetalleActuacion from './DetalleActuacion'
 import RevisionForm from './RevisionForm'
 
+export const metadata = { title: 'Detalle de la causa' }
+
 type Props = {
   params: Promise<{ causa: string }>
   searchParams: Promise<Record<string, string | string[] | undefined>>
@@ -42,17 +45,17 @@ function decodificarCausa(valor: string): string | null {
   }
 }
 
-const COLOR_DECISION: Record<string, string> = {
-  CORREGIR: 'bg-blue-100 text-blue-800',
-  INSUFICIENTE: 'bg-amber-100 text-amber-800',
-  CONSERVAR: 'bg-green-100 text-green-800',
+const TONO_DECISION: Record<string, Tono> = {
+  CORREGIR: 'info',
+  INSUFICIENTE: 'atencion',
+  CONSERVAR: 'exito',
 }
 
 function Dato({ titulo, children, ancho = '' }: { titulo: string; children: React.ReactNode; ancho?: string }) {
   return (
-    <div className={ancho}>
-      <dt className="text-sm text-gray-500">{titulo}</dt>
-      <dd className="mt-1 text-sm text-gray-900">{children}</dd>
+    <div className={cx('min-w-0', ancho)}>
+      <dt className="text-sm text-muted">{titulo}</dt>
+      <dd className="mt-0.5 break-words text-sm text-fg">{children}</dd>
     </div>
   )
 }
@@ -87,9 +90,9 @@ export default async function CasoPage({ params, searchParams }: Props) {
   if (fallo) {
     console.error('No se pudo cargar la causa:', fallo.message)
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
+      <Alert tono="peligro" rol="alert">
         No se pudo cargar la causa. Intenta de nuevo en unos segundos.
-      </div>
+      </Alert>
     )
   }
   if (!exp.data) notFound()
@@ -126,157 +129,186 @@ export default async function CasoPage({ params, searchParams }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-mono text-2xl font-semibold text-gray-900">{expediente.numero_causa}</h1>
-          <p className="text-sm text-gray-500">Actualizado: {formatFecha(expediente.actualizado_en)}</p>
-        </div>
-        <Link href="/casos" className="text-sm font-medium text-blue-600 hover:text-blue-900">← Volver al listado</Link>
-      </div>
+      <PageHeader
+        titulo={expediente.numero_causa}
+        tituloMono
+        descripcion={`Actualizado: ${formatFecha(expediente.actualizado_en)}`}
+        migas={[{ etiqueta: 'Casos', href: '/casos' }, { etiqueta: expediente.numero_causa }]}
+        acciones={expediente.estado ? <EstadoBadge tipo="caso" estado={expediente.estado} /> : undefined}
+      />
 
-      <section aria-labelledby="titulo-expediente" className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 id="titulo-expediente" className="mb-4 text-lg font-medium text-gray-900">Datos del expediente</h2>
-        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Dato titulo="Ciudad">{expediente.ciudad ?? '-'}</Dato>
-          <Dato titulo="Estado">{expediente.estado ? (ESTADO_CASO_ETIQUETAS[expediente.estado] ?? expediente.estado) : '-'}</Dato>
-          <Dato titulo="Tipo de acción">{expediente.tipo_accion ?? '-'}</Dato>
-          <Dato titulo="Inicio del juicio">{formatFechaProcesal(expediente.fecha_inicio_juicio)}</Dato>
-          <Dato titulo="Actor" ancho="sm:col-span-2">{expediente.actor ?? '-'}</Dato>
-          <Dato titulo="Demandado" ancho="sm:col-span-2">{expediente.demandado ?? '-'}</Dato>
-          <Dato titulo="Total de actuaciones">{expediente.total_actuaciones ?? totalActuaciones}</Dato>
-          {expediente.mensaje_especial && (
-            <Dato titulo="Mensaje especial" ancho="sm:col-span-4">
-              <span className="block rounded bg-amber-50 p-3 text-amber-900">{expediente.mensaje_especial}</span>
-            </Dato>
-          )}
-        </dl>
-      </section>
-
-      <section aria-labelledby="titulo-clasificacion" className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 id="titulo-clasificacion" className="mb-4 text-lg font-medium text-gray-900">Clasificación</h2>
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <div>
-            <h3 className="mb-3 text-sm font-medium text-gray-700">Último hito</h3>
-            <dl className="space-y-3">
-              <Dato titulo="Etapa">{expediente.ultima_etapa ?? '-'}</Dato>
-              <Dato titulo="Fase">{expediente.ultima_fase ?? '-'}</Dato>
-              <Dato titulo="Fecha de cierre">{formatFechaProcesal(expediente.fecha_fin_ultima_fase)}</Dato>
-            </dl>
-          </div>
-          <div>
-            <h3 className="mb-3 text-sm font-medium text-gray-700">Estado actual</h3>
-            <dl className="space-y-3">
-              <Dato titulo="Etapa">{expediente.etapa_actual ?? '-'}</Dato>
-              <Dato titulo="Fase">{expediente.fase_actual ?? '-'}</Dato>
-              <Dato titulo="Inicio de la fase">{formatFechaProcesal(expediente.fecha_inicio_fase_actual)}</Dato>
-            </dl>
-          </div>
-        </div>
-      </section>
-
-      <section aria-labelledby="titulo-auditoria" className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 id="titulo-auditoria" className="mb-4 text-lg font-medium text-gray-900">Auditoría de IA</h2>
-        {!auditoria ? (
-          <p className="rounded bg-gray-50 p-4 text-sm text-gray-600">Esta causa aún no tiene auditoría de IA.</p>
-        ) : (
-          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Dato titulo="Decisión">
-              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${ia.decision ? COLOR_DECISION[ia.decision] : 'bg-gray-100 text-gray-800'}`}>
-                {ia.decision ? AUDITORIA_DECISION_ETIQUETAS[ia.decision] : 'Sin decisión'}
-              </span>
-            </Dato>
-            <Dato titulo="Confianza">{ia.confianza !== null ? `${Math.round(ia.confianza * 100)} %` : '-'}</Dato>
-            <Dato titulo="Modelo">{auditoria.modelo}</Dato>
-            <Dato titulo="Fecha">{formatFecha(auditoria.creado_en)}</Dato>
-            <Dato titulo="Motivo" ancho="sm:col-span-4">{ia.motivo ?? '-'}</Dato>
-            <Dato titulo="Último hito propuesto" ancho="sm:col-span-2">{describirPar(ia.ultimo_hito)}</Dato>
-            <Dato titulo="Estado actual propuesto" ancho="sm:col-span-2">{describirPar(ia.estado_actual)}</Dato>
-            {ia.evidencias.length > 0 && (
-              <Dato titulo="Evidencias" ancho="sm:col-span-4">
-                {ia.evidencias.length} actuación(es) citada(s). Aparecen resaltadas en la tabla de actuaciones.
-              </Dato>
-            )}
-          </dl>
-        )}
-      </section>
-
-      {auditoria && (errorRevision || revision) && (
-        <section aria-labelledby="titulo-revision" className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 id="titulo-revision" className="mb-4 text-lg font-medium text-gray-900">Revisión humana</h2>
-          {errorRevision && (
-            <p className="rounded bg-amber-50 p-3 text-sm text-amber-800">No se pudo cargar la revisión. Recarga la página.</p>
-          )}
-          {revision?.estado === 'PENDIENTE' && (
-            <RevisionForm auditoriaId={auditoria.id} permiteAceptarIA={puedeAceptarIA(ia)} etapas={etapas} fases={fases} />
-          )}
-          {revision?.estado === 'RESUELTA' && (
-            <dl className="grid grid-cols-1 gap-4 rounded bg-green-50 p-4 sm:grid-cols-2">
-              <Dato titulo="Decisión">
-                {DECISION_ETIQUETAS[revision.decision_humana as DecisionRevision] ?? revision.decision_humana ?? '-'}
-              </Dato>
-              <Dato titulo="Revisado">{formatFecha(revision.revisado_en)}</Dato>
-              {revision.eta_id_manual !== null && (
-                <Dato titulo="Clasificación manual" ancho="sm:col-span-2">
-                  {nombreEtapa(revision.eta_id_manual, etapas)} / {nombreFase(revision.fas_id_manual, fases)}
-                </Dato>
-              )}
-              {revision.observacion && <Dato titulo="Observación" ancho="sm:col-span-2">{revision.observacion}</Dato>}
-            </dl>
-          )}
-        </section>
+      {expediente.mensaje_especial && (
+        <Alert tono="atencion" titulo="Mensaje especial">
+          {expediente.mensaje_especial}
+        </Alert>
       )}
 
-      <section aria-labelledby="titulo-actuaciones" className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 id="titulo-actuaciones" className="mb-4 text-lg font-medium text-gray-900">Actuaciones</h2>
-        {errorActuaciones ? (
-          <p className="rounded bg-amber-50 p-3 text-sm text-amber-800">No se pudieron cargar las actuaciones.</p>
-        ) : actuaciones.length === 0 ? (
-          <p className="text-sm text-gray-500">Esta causa no tiene actuaciones en esta página.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  {['Fecha', 'Carpeta', 'Título', 'Detalle'].map((t) => (
-                    <th key={t} scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{t}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {actuaciones.map((a) => {
-                  const esEvidencia = evidencias.has(a.actuacion_id)
-                  return (
-                    <tr key={a.actuacion_id} className={esEvidencia ? 'bg-blue-50' : 'hover:bg-gray-50'}>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
-                        {formatFechaProcesal(a.fecha)}
-                        {esEvidencia && <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-800">Evidencia IA</span>}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{a.carpeta}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{a.titulo}</td>
-                      <td className="px-4 py-3"><DetalleActuacion texto={a.detalle} /></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <nav aria-label="Paginación de actuaciones" className="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
-          <p className="text-sm text-gray-500">Página {pagina} de {totalPaginas} · {totalActuaciones} actuaciones</p>
-          <div className="flex gap-2">
-            {pagina > 1 && (
-              <Link href={urlActuaciones(pagina - 1)} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                Anterior
-              </Link>
-            )}
-            {pagina < totalPaginas && (
-              <Link href={urlActuaciones(pagina + 1)} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                Siguiente
-              </Link>
-            )}
-          </div>
-        </nav>
-      </section>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
+          <Card>
+            <CardHeader titulo="Datos del expediente" />
+            <CardBody>
+              <dl className="grid gap-4 sm:grid-cols-2">
+                <Dato titulo="Ciudad">{expediente.ciudad ?? '—'}</Dato>
+                <Dato titulo="Tipo de acción">{expediente.tipo_accion ?? '—'}</Dato>
+                <Dato titulo="Inicio del juicio">{formatFechaProcesal(expediente.fecha_inicio_juicio)}</Dato>
+                <Dato titulo="Total de actuaciones">{expediente.total_actuaciones ?? totalActuaciones}</Dato>
+                <Dato titulo="Actor" ancho="sm:col-span-2">{expediente.actor ?? '—'}</Dato>
+                <Dato titulo="Demandado" ancho="sm:col-span-2">{expediente.demandado ?? '—'}</Dato>
+              </dl>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader titulo="Clasificación" />
+            <CardBody>
+              <div className="grid gap-6 sm:grid-cols-2">
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-fg">Último hito</h3>
+                  <dl className="space-y-3">
+                    <Dato titulo="Etapa">{expediente.ultima_etapa ?? '—'}</Dato>
+                    <Dato titulo="Fase">{expediente.ultima_fase ?? '—'}</Dato>
+                    <Dato titulo="Fecha de cierre">{formatFechaProcesal(expediente.fecha_fin_ultima_fase)}</Dato>
+                  </dl>
+                </div>
+                <div className="space-y-3 rounded-control bg-surface-2 p-4">
+                  <h3 className="text-sm font-semibold text-fg">Estado actual</h3>
+                  <dl className="space-y-3">
+                    <Dato titulo="Etapa">{expediente.etapa_actual ?? '—'}</Dato>
+                    <Dato titulo="Fase">{expediente.fase_actual ?? '—'}</Dato>
+                    <Dato titulo="Inicio de la fase">{formatFechaProcesal(expediente.fecha_inicio_fase_actual)}</Dato>
+                  </dl>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader
+              titulo="Actuaciones"
+              descripcion={`${totalActuaciones} ${totalActuaciones === 1 ? 'actuación' : 'actuaciones'}, de la más reciente a la más antigua`}
+            />
+            <CardBody className="space-y-4">
+              {errorActuaciones ? (
+                <Alert tono="peligro">No se pudieron cargar las actuaciones.</Alert>
+              ) : actuaciones.length === 0 ? (
+                <p className="text-sm text-muted">Esta causa no tiene actuaciones en esta página.</p>
+              ) : (
+                <ol className="space-y-0">
+                  {actuaciones.map((a) => {
+                    const esEvidencia = evidencias.has(a.actuacion_id)
+                    return (
+                      <li key={a.actuacion_id} className="relative flex gap-4 pb-5 last:pb-0">
+                        <span aria-hidden="true" className="absolute left-[5px] top-3 h-full w-px bg-(--border-subtle)" />
+                        <span
+                          aria-hidden="true"
+                          className={cx(
+                            'relative z-10 mt-1.5 size-[11px] shrink-0 rounded-full border-2',
+                            esEvidencia ? 'border-info-solid bg-info-solid' : 'border-strong bg-surface',
+                          )}
+                        />
+                        <div
+                          className={cx(
+                            'min-w-0 flex-1 space-y-1',
+                            esEvidencia && 'rounded-control border border-info-border bg-info-soft p-3',
+                          )}
+                        >
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <span className="text-sm font-semibold tabular-nums text-fg">{formatFechaProcesal(a.fecha)}</span>
+                            {a.carpeta ? <span className="text-xs text-muted">{a.carpeta}</span> : null}
+                            {esEvidencia && <Badge tono="info">Evidencia IA</Badge>}
+                          </div>
+                          <p className="text-sm font-medium text-fg">{a.titulo}</p>
+                          <DetalleActuacion texto={a.detalle} />
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ol>
+              )}
+              <Pagination
+                pagina={pagina}
+                totalPaginas={totalPaginas}
+                hrefPagina={urlActuaciones}
+                etiqueta="Paginación de actuaciones"
+              />
+            </CardBody>
+          </Card>
+        </div>
+
+        <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
+          <Card>
+            <CardHeader
+              titulo="Auditoría de IA"
+              acciones={
+                auditoria ? (
+                  <Badge tono={ia.decision ? TONO_DECISION[ia.decision] : 'neutral'}>
+                    {ia.decision ? AUDITORIA_DECISION_ETIQUETAS[ia.decision] : 'Sin decisión'}
+                  </Badge>
+                ) : undefined
+              }
+            />
+            <CardBody>
+              {!auditoria ? (
+                <p className="text-sm text-muted">Esta causa aún no tiene auditoría de IA.</p>
+              ) : (
+                <dl className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Dato titulo="Confianza">{ia.confianza !== null ? `${Math.round(ia.confianza * 100)} %` : '—'}</Dato>
+                    <Dato titulo="Fecha">{formatFecha(auditoria.creado_en)}</Dato>
+                  </div>
+                  <Dato titulo="Motivo">{ia.motivo ?? '—'}</Dato>
+                  <Dato titulo="Último hito propuesto">{describirPar(ia.ultimo_hito)}</Dato>
+                  <Dato titulo="Estado actual propuesto">{describirPar(ia.estado_actual)}</Dato>
+                  {ia.evidencias.length > 0 && (
+                    <Dato titulo="Evidencias">
+                      {ia.evidencias.length} actuación(es) citada(s). Aparecen resaltadas en la línea de actuaciones.
+                    </Dato>
+                  )}
+                  <Dato titulo="Modelo">
+                    <span className="break-all text-xs text-muted">{auditoria.modelo}</span>
+                  </Dato>
+                </dl>
+              )}
+            </CardBody>
+          </Card>
+
+          {auditoria && (errorRevision || revision) && (
+            <Card>
+              <CardHeader
+                titulo="Revisión humana"
+                acciones={
+                  revision?.estado === 'PENDIENTE' ? (
+                    <Badge tono="atencion">Pendiente</Badge>
+                  ) : revision?.estado === 'RESUELTA' ? (
+                    <Badge tono="exito">Resuelta</Badge>
+                  ) : undefined
+                }
+              />
+              <CardBody>
+                {errorRevision && <Alert tono="atencion">No se pudo cargar la revisión. Recarga la página.</Alert>}
+                {revision?.estado === 'PENDIENTE' && (
+                  <RevisionForm auditoriaId={auditoria.id} permiteAceptarIA={puedeAceptarIA(ia)} etapas={etapas} fases={fases} />
+                )}
+                {revision?.estado === 'RESUELTA' && (
+                  <dl className="space-y-3">
+                    <Dato titulo="Decisión">
+                      {DECISION_ETIQUETAS[revision.decision_humana as DecisionRevision] ?? revision.decision_humana ?? '—'}
+                    </Dato>
+                    <Dato titulo="Revisado">{formatFecha(revision.revisado_en)}</Dato>
+                    {revision.eta_id_manual !== null && (
+                      <Dato titulo="Clasificación manual">
+                        {nombreEtapa(revision.eta_id_manual, etapas)} / {nombreFase(revision.fas_id_manual, fases)}
+                      </Dato>
+                    )}
+                    {revision.observacion && <Dato titulo="Observación">{revision.observacion}</Dato>}
+                  </dl>
+                )}
+              </CardBody>
+            </Card>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
