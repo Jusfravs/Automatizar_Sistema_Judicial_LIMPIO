@@ -1,4 +1,5 @@
 import type { Database, Json } from '@/lib/database.types'
+import type { Tono } from '@/lib/tonos'
 
 type ExpedienteRow = Database['public']['Tables']['expedientes']['Row']
 type ActuacionRow = Database['public']['Tables']['actuaciones_procesales']['Row']
@@ -45,6 +46,15 @@ export const ESTADO_CASO_ETIQUETAS: Record<string, string> = {
   ERROR: 'Error',
   ERROR_FINAL: 'Error final',
   EXCLUIDO_NO_CORRESPONDE: 'No corresponde',
+}
+
+// Mapeo estado → tono semántico. Lo consume <EstadoBadge tipo="caso">.
+export const ESTADO_CASO_TONOS: Record<string, Tono> = {
+  PROCESADO: 'exito',
+  REVISION: 'atencion',
+  ERROR: 'peligro',
+  ERROR_FINAL: 'peligro',
+  EXCLUIDO_NO_CORRESPONDE: 'neutral',
 }
 
 export const DECISION_ETIQUETAS: Record<DecisionRevision, string> = {

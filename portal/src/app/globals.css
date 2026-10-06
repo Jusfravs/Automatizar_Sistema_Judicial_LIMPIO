@@ -1,26 +1,362 @@
 @import "tailwindcss";
 
+/*
+ * Sistema de diseño "Espoir institucional" del portal de Gestión Judicial.
+ *
+ * Capas:
+ *   1. Primitivos  (--espoir-*)   colores de marca, nunca se usan directo en componentes.
+ *   2. Semánticos  (--bg, --fg…)  cambian con el tema; son los únicos que consumen las pantallas.
+ *   3. Componente  (--control-*, --nav-*)  ajustes finos de controles, derivados de los semánticos.
+ *
+ * Tema: claro por defecto; oscuro si el sistema lo pide (salvo data-theme="light")
+ * o si <html data-theme="dark">. Los dos bloques oscuros deben mantenerse idénticos.
+ * Contraste WCAG AA verificado par a par (ver system.md, sección Contraste).
+ */
+
+/* ---------- 1. Primitivos de marca (no dependen del tema) ---------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --espoir-azul: #044888;
+  --espoir-azul-profundo: #033a6e;
+  --espoir-azul-claro: #7fb2f0;
+  --espoir-ambar: #f3a90a;
+  --espoir-cian: #26c0d3;
+  --espoir-verde: #32c682;
+  --espoir-coral: #ff5549;
+  --espoir-tinta: #0f1e33;
+  --espoir-noche: #0b1626;
+
+  /* Movimiento: feedback de UI, nunca decoración. */
+  --duracion-rapida: 120ms; /* hover, press */
+  --duracion-base: 180ms; /* menús, popovers */
+  --duracion-lenta: 240ms; /* modales, paneles */
+  --curva-salida: cubic-bezier(0.23, 1, 0.32, 1); /* entradas e interacción */
+  --curva-movimiento: cubic-bezier(0.77, 0, 0.175, 1); /* desplazamiento en pantalla */
+
+  /* Capas de apilamiento */
+  --z-cabecera: 10;
+  --z-desplegable: 20;
+  --z-overlay: 40;
+  --z-modal: 50;
+  --z-aviso: 60;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ---------- 2. Semánticos: tema claro ---------- */
+:root {
+  color-scheme: light;
+
+  /* Superficies */
+  --bg: #f6f8fb; /* lienzo de la aplicación */
+  --surface: #ffffff; /* tarjetas, tablas, formularios */
+  --surface-2: #eef2f7; /* cabecera de tabla, fila en hover, zonas hundidas */
+
+  /* Texto */
+  --fg: var(--espoir-tinta);
+  --muted: #51607a;
+
+  /* Marca */
+  --primary: var(--espoir-azul);
+  --primary-hover: var(--espoir-azul-profundo);
+  --on-primary: #ffffff;
+  --accent: var(--espoir-ambar); /* solo relleno; jamás como color de texto */
+  --on-accent: var(--espoir-tinta);
+
+  /* Líneas */
+  --border-subtle: #dde3ec; /* separadores, bordes de tarjeta (decorativo) */
+  --border-strong: #7a8aa2; /* contorno de inputs y controles (>= 3:1) */
+  --focus: #1d6fd6; /* anillo de foco (>= 3:1 sobre bg, surface y surface-2) */
+
+  /* Estados: soft = fondo, fg = texto, border = contorno, solid = relleno fuerte, on-solid = texto sobre solid */
+  --neutral-soft: #eef2f7;
+  --neutral-fg: #3a4760;
+  --neutral-border: #cdd5e1;
+  --neutral-solid: #5b6880;
+  --neutral-on-solid: #ffffff;
+
+  --info-soft: #e2f6f9;
+  --info-fg: #0a5f6c;
+  --info-border: #9adae3;
+  --info-solid: #0e7c8c; /* cian Espoir oscurecido */
+  --info-on-solid: #ffffff;
+
+  --progreso-soft: #e9edfc;
+  --progreso-fg: #2e3e9c;
+  --progreso-border: #b9c5f1;
+  --progreso-solid: #3c4fc2;
+  --progreso-on-solid: #ffffff;
+
+  --exito-soft: #e3f5ec;
+  --exito-fg: #11643f;
+  --exito-border: #a3dabd;
+  --exito-solid: #178552; /* verde Espoir oscurecido hasta 4.65:1 con blanco */
+  --exito-on-solid: #ffffff;
+
+  --peligro-soft: #fdecea;
+  --peligro-fg: #a3241b;
+  --peligro-border: #f2b6b0;
+  --peligro-solid: #d93a2f; /* coral Espoir oscurecido */
+  --peligro-on-solid: #ffffff;
+
+  --atencion-soft: #fef3d9;
+  --atencion-fg: #704800;
+  --atencion-border: #f1cf7c;
+  --atencion-solid: var(--espoir-ambar);
+  --atencion-on-solid: var(--espoir-tinta);
+
+  /* Elevación: anillo + profundidad suave teñida de tinta */
+  --sombra-tarjeta: 0 0 0 1px rgb(15 30 51 / 0.06), 0 1px 2px rgb(15 30 51 / 0.05);
+  --sombra-elevada: 0 0 0 1px rgb(15 30 51 / 0.06), 0 2px 4px rgb(15 30 51 / 0.06), 0 4px 12px rgb(15 30 51 / 0.05);
+  --sombra-overlay: 0 0 0 1px rgb(15 30 51 / 0.08), 0 8px 24px rgb(15 30 51 / 0.12), 0 24px 48px rgb(15 30 51 / 0.12);
+  --velo: rgb(11 22 38 / 0.5); /* fondo detrás de modales */
+  --nav: var(--espoir-azul); /* barra lateral y cabecera móvil */
+  --on-nav: #ffffff;
 }
 
+/* ---------- 2b. Semánticos: tema oscuro (bloque A: preferencia del sistema) ---------- */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --bg: var(--espoir-noche);
+    --surface: #12213a;
+    --surface-2: #1a2b47;
+
+    --fg: #e6ecf5;
+    --muted: #9aa8bf;
+
+    --primary: var(--espoir-azul-claro);
+    --primary-hover: #a3c8f5;
+    --on-primary: var(--espoir-noche);
+    --accent: var(--espoir-ambar);
+    --on-accent: var(--espoir-tinta);
+
+    --border-subtle: #22355a;
+    --border-strong: #5a7099;
+    --focus: var(--espoir-azul-claro);
+
+    --neutral-soft: #1c2b45;
+    --neutral-fg: #c7d1e1;
+    --neutral-border: #34486c;
+    --neutral-solid: #8a9ab3;
+    --neutral-on-solid: var(--espoir-noche);
+
+    --info-soft: #0c2d38;
+    --info-fg: #80dde9;
+    --info-border: #1a5664;
+    --info-solid: var(--espoir-cian);
+    --info-on-solid: var(--espoir-noche);
+
+    --progreso-soft: #1b2452;
+    --progreso-fg: #b6c2ff;
+    --progreso-border: #38479c;
+    --progreso-solid: #8494f2;
+    --progreso-on-solid: var(--espoir-noche);
+
+    --exito-soft: #0e2e25;
+    --exito-fg: #80deaf;
+    --exito-border: #1d5b43;
+    --exito-solid: var(--espoir-verde);
+    --exito-on-solid: var(--espoir-noche);
+
+    --peligro-soft: #3a1619;
+    --peligro-fg: #ffada6;
+    --peligro-border: #702b28;
+    --peligro-solid: #ff6f65;
+    --peligro-on-solid: var(--espoir-noche);
+
+    --atencion-soft: #33270b;
+    --atencion-fg: #f8cd6e;
+    --atencion-border: #6c5013;
+    --atencion-solid: var(--espoir-ambar);
+    --atencion-on-solid: var(--espoir-tinta);
+
+    /* En oscuro la sombra no se lee: solo anillo claro. */
+    --sombra-tarjeta: 0 0 0 1px rgb(255 255 255 / 0.06);
+    --sombra-elevada: 0 0 0 1px rgb(255 255 255 / 0.08);
+    --sombra-overlay: 0 0 0 1px rgb(255 255 255 / 0.1), 0 16px 40px rgb(0 0 0 / 0.5);
+    --velo: rgb(0 0 0 / 0.6);
+    /* La barra sigue en azul Espoir profundo: con primary claro sería un panel claro. */
+    --nav: #0e2d55;
+    --on-nav: #e6ecf5;
   }
 }
 
+/* ---------- 2c. Semánticos: tema oscuro (bloque B: elección explícita) ---------- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: var(--espoir-noche);
+  --surface: #12213a;
+  --surface-2: #1a2b47;
+
+  --fg: #e6ecf5;
+  --muted: #9aa8bf;
+
+  --primary: var(--espoir-azul-claro);
+  --primary-hover: #a3c8f5;
+  --on-primary: var(--espoir-noche);
+  --accent: var(--espoir-ambar);
+  --on-accent: var(--espoir-tinta);
+
+  --border-subtle: #22355a;
+  --border-strong: #5a7099;
+  --focus: var(--espoir-azul-claro);
+
+  --neutral-soft: #1c2b45;
+  --neutral-fg: #c7d1e1;
+  --neutral-border: #34486c;
+  --neutral-solid: #8a9ab3;
+  --neutral-on-solid: var(--espoir-noche);
+
+  --info-soft: #0c2d38;
+  --info-fg: #80dde9;
+  --info-border: #1a5664;
+  --info-solid: var(--espoir-cian);
+  --info-on-solid: var(--espoir-noche);
+
+  --progreso-soft: #1b2452;
+  --progreso-fg: #b6c2ff;
+  --progreso-border: #38479c;
+  --progreso-solid: #8494f2;
+  --progreso-on-solid: var(--espoir-noche);
+
+  --exito-soft: #0e2e25;
+  --exito-fg: #80deaf;
+  --exito-border: #1d5b43;
+  --exito-solid: var(--espoir-verde);
+  --exito-on-solid: var(--espoir-noche);
+
+  --peligro-soft: #3a1619;
+  --peligro-fg: #ffada6;
+  --peligro-border: #702b28;
+  --peligro-solid: #ff6f65;
+  --peligro-on-solid: var(--espoir-noche);
+
+  --atencion-soft: #33270b;
+  --atencion-fg: #f8cd6e;
+  --atencion-border: #6c5013;
+  --atencion-solid: var(--espoir-ambar);
+  --atencion-on-solid: var(--espoir-tinta);
+
+  --sombra-tarjeta: 0 0 0 1px rgb(255 255 255 / 0.06);
+  --sombra-elevada: 0 0 0 1px rgb(255 255 255 / 0.08);
+  --sombra-overlay: 0 0 0 1px rgb(255 255 255 / 0.1), 0 16px 40px rgb(0 0 0 / 0.5);
+  --velo: rgb(0 0 0 / 0.6);
+  /* La barra sigue en azul Espoir profundo: con primary claro sería un panel claro. */
+  --nav: #0e2d55;
+  --on-nav: #e6ecf5;
+}
+
+/* ---------- 3. Tokens de componente (derivados, no cambian por tema) ---------- */
+:root {
+  --control-bg: var(--surface);
+  --control-bg-deshabilitado: var(--surface-2);
+  --control-borde: var(--border-strong);
+  --control-borde-hover: var(--fg);
+  --control-placeholder: var(--muted);
+  --nav-indicador: var(--accent); /* barra ámbar del ítem activo; nunca la única señal */
+  --tabla-cabecera: var(--surface-2);
+  --tabla-fila-hover: var(--surface-2);
+}
+
+/*
+ * Exposición a Tailwind. Se añade a la paleta por defecto (gray-*, blue-*…),
+ * que sigue disponible solo para el código heredado mientras dura la migración.
+ */
+@theme inline {
+  /* Superficies y texto */
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+
+  /* Marca */
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-nav: var(--nav);
+  --color-on-nav: var(--on-nav);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-focus: var(--focus); /* ring-focus, outline-focus */
+  --color-velo: var(--velo); /* backdrop:bg-velo */
+
+  /* Bordes: solo en utilidades de borde (border-subtle, border-strong, divide-*) */
+  --border-color-subtle: var(--border-subtle);
+  --border-color-strong: var(--border-strong);
+
+  /* Estados (bg-<tono>-soft, text-<tono>-fg, border-<tono>-border, bg-<tono>-solid, text-<tono>-on-solid) */
+  --color-neutral-soft: var(--neutral-soft);
+  --color-neutral-fg: var(--neutral-fg);
+  --color-neutral-border: var(--neutral-border);
+  --color-neutral-solid: var(--neutral-solid);
+  --color-neutral-on-solid: var(--neutral-on-solid);
+
+  --color-info-soft: var(--info-soft);
+  --color-info-fg: var(--info-fg);
+  --color-info-border: var(--info-border);
+  --color-info-solid: var(--info-solid);
+  --color-info-on-solid: var(--info-on-solid);
+
+  --color-progreso-soft: var(--progreso-soft);
+  --color-progreso-fg: var(--progreso-fg);
+  --color-progreso-border: var(--progreso-border);
+  --color-progreso-solid: var(--progreso-solid);
+  --color-progreso-on-solid: var(--progreso-on-solid);
+
+  --color-exito-soft: var(--exito-soft);
+  --color-exito-fg: var(--exito-fg);
+  --color-exito-border: var(--exito-border);
+  --color-exito-solid: var(--exito-solid);
+  --color-exito-on-solid: var(--exito-on-solid);
+
+  --color-peligro-soft: var(--peligro-soft);
+  --color-peligro-fg: var(--peligro-fg);
+  --color-peligro-border: var(--peligro-border);
+  --color-peligro-solid: var(--peligro-solid);
+  --color-peligro-on-solid: var(--peligro-on-solid);
+
+  --color-atencion-soft: var(--atencion-soft);
+  --color-atencion-fg: var(--atencion-fg);
+  --color-atencion-border: var(--atencion-border);
+  --color-atencion-solid: var(--atencion-solid);
+  --color-atencion-on-solid: var(--atencion-on-solid);
+
+  /* Tipografía (las variables --font-montserrat / --font-source-serif las define layout.tsx con next/font) */
+  --font-sans: var(--font-montserrat, "Montserrat"), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-serif: var(--font-source-serif, "Source Serif 4"), Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-geist-mono, ui-monospace), ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  /* Radios con nombre de uso (no pisan rounded-sm/md/lg heredados) */
+  --radius-control: 6px; /* botones, inputs, chips cuadrados */
+  --radius-tarjeta: 8px; /* tarjetas, tablas, avisos */
+  --radius-modal: 12px; /* modales y paneles flotantes */
+
+  /* Elevación (no pisa shadow-sm/xl heredados) */
+  --shadow-tarjeta: var(--sombra-tarjeta);
+  --shadow-elevada: var(--sombra-elevada);
+  --shadow-overlay: var(--sombra-overlay);
+
+  /* Movimiento: ease-salida / ease-movimiento; duración vía duration-(--duracion-base) */
+  --ease-salida: var(--curva-salida);
+  --ease-movimiento: var(--curva-movimiento);
+  --default-transition-duration: var(--duracion-rapida);
+  --default-transition-timing-function: var(--curva-salida);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

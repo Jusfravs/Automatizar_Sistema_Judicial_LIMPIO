@@ -4,12 +4,11 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { formatFecha } from '@/lib/fechas'
+import { EstadoBadge } from '@/components/ui/EstadoBadge'
 import {
   COLUMNAS_COLA_ERROR,
   COLUMNAS_ESTADO_EJECUCION,
   COLUMNAS_SOLICITUD,
-  ESTADO_COLORES,
-  ESTADO_ETIQUETAS,
   ESTADOS_ACTIVOS,
   ESTADOS_COLA_CON_ERROR,
   MODO_ETIQUETAS,
@@ -155,9 +154,7 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores }:
           <div>
             <dt className="text-sm text-gray-500">Estado</dt>
             <dd className="mt-1">
-              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${ESTADO_COLORES[actual.estado] ?? 'bg-gray-100 text-gray-800'}`}>
-                {ESTADO_ETIQUETAS[actual.estado] ?? actual.estado}
-              </span>
+              <EstadoBadge tipo="lote" estado={actual.estado} />
             </dd>
           </div>
           <div>

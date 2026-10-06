@@ -2,7 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import type { Database } from '@/lib/database.types'
 import { formatFecha } from '@/lib/fechas'
-import { ESTADO_COLORES, ESTADO_ETIQUETAS, MODO_ETIQUETAS } from '@/lib/lotes'
+import { MODO_ETIQUETAS } from '@/lib/lotes'
+import { EstadoBadge } from '@/components/ui'
 
 type SolicitudLote = Pick<
   Database['public']['Tables']['solicitudes_lote']['Row'],
@@ -79,9 +80,7 @@ async function LotesList() {
                     <td className="px-4 py-3 text-sm text-gray-900 font-mono">{s.parametro || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{s.trabajadores}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ESTADO_COLORES[s.estado] || 'bg-gray-100 text-gray-800'}`}>
-                        {ESTADO_ETIQUETAS[s.estado] || s.estado}
-                      </span>
+                      <EstadoBadge tipo="lote" estado={s.estado} />
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">{formatFecha(s.creado_en)}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{truncate(s.mensaje, 60)}</td>

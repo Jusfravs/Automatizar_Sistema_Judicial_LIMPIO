@@ -1,0 +1,27 @@
+/*
+ * Componentes del sistema de diseño "Espoir institucional".
+ * En componentes cliente ('use client') importa del archivo concreto (`@/components/ui/Button`)
+ * para no arrastrar al bundle lo que no usas.
+ */
+export { Alert, type AlertProps, type TonoAlerta } from './Alert'
+export { Badge, type BadgeProps } from './Badge'
+export { Button, type ButtonProps } from './Button'
+export { ButtonLink, type ButtonLinkProps } from './ButtonLink'
+export { Card, CardBody, CardHeader, type CardHeaderProps } from './Card'
+export { Checkbox, type CheckboxProps } from './Checkbox'
+export { DataTable, type Columna, type DataTableProps } from './DataTable'
+export { Dialog, type DialogProps } from './Dialog'
+export { EmptyState, type EmptyStateProps } from './EmptyState'
+export { EstadoBadge, type EstadoBadgeProps } from './EstadoBadge'
+export { Field, a11yCampo, idsCampo, type CampoA11y, type FieldProps } from './Field'
+export { Input } from './Input'
+export { PageHeader, type Miga, type PageHeaderProps } from './PageHeader'
+export { Pagination, type PaginationProps } from './Pagination'
+export { ProgressBar, type ProgressBarProps } from './ProgressBar'
+export { Radio, type RadioProps } from './Radio'
+export { Select } from './Select'
+export { Skeleton } from './Skeleton'
+export { Textarea } from './Textarea'
+export { ThemeToggle, type Tema } from './ThemeToggle'
+export { clasesBoton, type TamanoBoton, type VarianteBoton } from './estilos'
+export type { Tono } from '@/lib/tonos'

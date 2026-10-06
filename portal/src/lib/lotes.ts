@@ -1,4 +1,5 @@
 import type { Database } from '@/lib/database.types'
+import type { Tono } from '@/lib/tonos'
 
 export const ESTADOS_ACTIVOS: readonly string[] = ['SOLICITADA', 'TOMADA', 'PREPARANDO', 'EN_CURSO']
 export const ESTADOS_COLA_CON_ERROR = ['ERROR_FINAL', 'REVISION', 'SIN_RESULTADOS', 'PARCIAL']
@@ -22,15 +23,16 @@ export type EstadoEjecucion = Pick<EstadoEjecucionRow,
   'trabajadores_configurados' | 'iniciado_en' | 'finalizado_en'>
 export type ColaError = Pick<ColaRow, 'numero_causa' | 'estado' | 'intentos' | 'ultimo_error'>
 
-export const ESTADO_COLORES: Record<string, string> = {
-  SOLICITADA: 'bg-yellow-100 text-yellow-800',
-  TOMADA: 'bg-blue-100 text-blue-800',
-  PREPARANDO: 'bg-purple-100 text-purple-800',
-  EN_CURSO: 'bg-indigo-100 text-indigo-800',
-  COMPLETADA: 'bg-green-100 text-green-800',
-  FALLIDA: 'bg-red-100 text-red-800',
-  RECHAZADA: 'bg-red-100 text-red-800',
-  CANCELADA: 'bg-gray-100 text-gray-800',
+// Mapeo estado → tono semántico. Lo consume <EstadoBadge tipo="lote">.
+export const ESTADO_TONOS: Record<string, Tono> = {
+  SOLICITADA: 'atencion',
+  TOMADA: 'info',
+  PREPARANDO: 'progreso',
+  EN_CURSO: 'progreso',
+  COMPLETADA: 'exito',
+  FALLIDA: 'peligro',
+  RECHAZADA: 'peligro',
+  CANCELADA: 'neutral',
 }
 
 export const ESTADO_ETIQUETAS: Record<string, string> = {

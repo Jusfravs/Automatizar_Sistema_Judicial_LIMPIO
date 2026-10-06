@@ -21,6 +21,8 @@ const csp = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Evita que `next dev` agregue archivos de reglas al repo.
+  agentRules: false,
   async headers() {
     return [
       {
