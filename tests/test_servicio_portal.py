@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.almacen_b2 import ClienteB2
+from src.almacen_b2 import ClienteB2, _sin_expect
 from src.servicio_portal import (
     ClienteStorage,
     ClienteStorageHibrido,
@@ -42,6 +42,11 @@ ID = "6f1c2b9e-1111-4222-8333-444455556666"
 
 
 class TestAlmacenB2(unittest.TestCase):
+    def test_eliminar_expect_no_sustituye_respuesta_http(self):
+        solicitud_http = MagicMock(headers={"Expect": b"100-continue"})
+        self.assertIsNone(_sin_expect(solicitud_http))
+        self.assertNotIn("Expect", solicitud_http.headers)
+
     def test_rutas_nuevas_b2_y_antiguas_supabase(self):
         supabase = MagicMock()
         b2 = MagicMock()

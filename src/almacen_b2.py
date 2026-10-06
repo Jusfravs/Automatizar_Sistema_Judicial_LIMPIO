@@ -12,6 +12,10 @@ VARIABLES_B2 = ("B2_ENDPOINT", "B2_BUCKET", "B2_KEY_ID", "B2_APP_KEY")
 MAXIMO_ENTRADA_BYTES = 20 * 1024 * 1024
 
 
+def _sin_expect(request, **_):
+    request.headers.pop("Expect", None)
+
+
 class ClienteB2:
     def __init__(self, endpoint: str, bucket: str, key_id: str, app_key: str, *, cliente=None):
         uri = urlparse(endpoint)
@@ -37,6 +41,11 @@ class ClienteB2:
                     request_checksum_calculation="when_required",
                     response_checksum_validation="when_required",
                 ),
+            )
+            # Algunos intermediarios cierran la conexión durante el intercambio
+            # Expect/100-continue. El cuerpo ya tiene longitud conocida.
+            cliente.meta.events.register(
+                "before-send.s3.PutObject", _sin_expect,
             )
         self.cliente = cliente
 
