@@ -103,6 +103,19 @@ export default function NuevoLoteForm() {
   }
 
   async function limpiarArchivoHuerfano(ruta: string) {
+    if (ruta.startsWith('b2:')) {
+      const id = ruta.split('/').at(-1)?.replace(/\.xlsx$/, '')
+      try {
+        const respuesta = await fetch('/api/lotes/archivo', {
+          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        })
+        if (!respuesta.ok) console.warn('No se pudo limpiar el archivo huérfano de B2:', respuesta.status)
+      } catch {
+        console.warn('No se pudo limpiar el archivo huérfano de B2')
+      }
+      return
+    }
     const supabase = createClient()
     try {
       const { data, error: rmError } = await supabase.storage.from('lotes').remove([ruta])
@@ -130,18 +143,34 @@ export default function NuevoLoteForm() {
     setLoading(true)
     const supabase = createClient()
     const id = crypto.randomUUID()
-    const archivoRuta = `entradas/${id}.xlsx`
+    let archivoRuta = `entradas/${id}.xlsx`
     let archivoSubido = false
 
     try {
-      const { error: uploadError } = await supabase.storage
-        .from('lotes')
-        .upload(archivoRuta, file!, { contentType: XLSX_MIME, upsert: false })
-      if (uploadError) {
-        console.error('No se pudo subir el archivo:', uploadError.message)
-        setError(traducirErrorInterno(uploadError.message))
-        setLoading(false)
-        return
+      if (process.env.NEXT_PUBLIC_LOTE_STORAGE === 'b2') {
+        const firma = await fetch('/api/lotes/archivo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, size: file!.size }),
+        })
+        if (!firma.ok) throw new Error(`B2_FIRMA_HTTP_${firma.status}`)
+        const { url, ruta } = await firma.json() as { url: string; ruta: string }
+        if (!url || !ruta?.startsWith('b2:')) throw new Error('B2_FIRMA_INVALIDA')
+        archivoRuta = ruta
+        archivoSubido = true
+        const subida = await fetch(url, {
+          method: 'PUT', headers: { 'Content-Type': XLSX_MIME }, body: file,
+        })
+        if (!subida.ok) throw new Error(`B2_SUBIDA_HTTP_${subida.status}`)
+      } else {
+        const { error: uploadError } = await supabase.storage
+          .from('lotes')
+          .upload(archivoRuta, file!, { contentType: XLSX_MIME, upsert: false })
+        if (uploadError) {
+          console.error('No se pudo subir el archivo:', uploadError.message)
+          setError(traducirErrorInterno(uploadError.message))
+          setLoading(false)
+          return
+        }
       }
       archivoSubido = true
 

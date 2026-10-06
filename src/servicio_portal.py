@@ -18,6 +18,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from src.almacen_b2 import ClienteB2, PREFIJO_B2
 from src.logger_config import obtener_logger
 
 
@@ -79,7 +80,12 @@ class Solicitud:
 
     def opciones_ejecucion(self) -> dict:
         """Traduce la solicitud a los argumentos de ``consola.ejecutar_lote``."""
-        if self.archivo_ruta != "entradas/%s.xlsx" % self.id:
+        ruta_supabase = self.archivo_ruta == "entradas/%s.xlsx" % self.id
+        ruta_b2 = re.fullmatch(
+            r"b2:entradas/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/%s\.xlsx"
+            % re.escape(self.id), self.archivo_ruta, re.IGNORECASE,
+        ) is not None
+        if not (ruta_supabase or ruta_b2):
             raise ErrorSolicitud("RUTA_DE_ARCHIVO_INVALIDA")
         if not 1 <= self.trabajadores <= 4:
             raise ErrorSolicitud("TRABAJADORES_FUERA_DE_RANGO")
@@ -161,9 +167,10 @@ class ClienteStorage:
         self.timeout = timeout
 
     @classmethod
-    def desde_entorno(cls) -> "ClienteStorage":
+    def desde_entorno(cls) -> "ClienteStorageHibrido":
         clave = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or ""
-        return cls(os.environ.get("SUPABASE_URL", "").strip(), clave.strip())
+        supabase = cls(os.environ.get("SUPABASE_URL", "").strip(), clave.strip())
+        return ClienteStorageHibrido(supabase, ClienteB2.desde_entorno())
 
     def _cabeceras(self, extra: dict | None = None) -> dict:
         cabeceras = {"apikey": self.clave}
@@ -198,6 +205,29 @@ class ClienteStorage:
             raise RuntimeError("STORAGE_SUBIDA_HTTP_%s" % exc.code) from None
         except URLError as exc:
             raise RuntimeError("STORAGE_NO_DISPONIBLE") from exc
+
+
+class ClienteStorageHibrido:
+    """Conserva los lotes anteriores en Supabase y usa B2 para rutas nuevas."""
+
+    def __init__(self, supabase: ClienteStorage, b2: ClienteB2 | None):
+        self.supabase = supabase
+        self.b2 = b2
+
+    def descargar(self, ruta: str) -> bytes:
+        if ruta.startswith(PREFIJO_B2):
+            if self.b2 is None:
+                raise RuntimeError("B2_NO_CONFIGURADO")
+            return self.b2.descargar(ruta)
+        return self.supabase.descargar(ruta)
+
+    def subir(self, ruta: str, contenido: bytes, tipo: str = TIPO_XLSX) -> None:
+        if ruta.startswith(PREFIJO_B2):
+            if self.b2 is None:
+                raise RuntimeError("B2_NO_CONFIGURADO")
+            self.b2.subir(ruta, contenido, tipo)
+        else:
+            self.supabase.subir(ruta, contenido, tipo)
 
 
 class RepositorioSolicitudes:
@@ -414,7 +444,8 @@ class ServicioPortal:
         excel = lote / "reporte_final.xlsx"
         if not excel.is_file():
             return None, None
-        ruta = "resultados/%s.xlsx" % solicitud.id
+        prefijo = PREFIJO_B2 if solicitud.archivo_ruta.startswith(PREFIJO_B2) else ""
+        ruta = "%sresultados/%s.xlsx" % (prefijo, solicitud.id)
         try:
             self.storage.subir(ruta, excel.read_bytes())
         except Exception as exc:

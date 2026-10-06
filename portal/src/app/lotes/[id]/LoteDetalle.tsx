@@ -138,6 +138,20 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores }:
     if (!actual.resultado_ruta) return
     setDescargando(true)
     setDownloadError('')
+    if (actual.resultado_ruta.startsWith('b2:')) {
+      try {
+        const respuesta = await fetch(`/api/lotes/archivo?id=${encodeURIComponent(actual.id)}`)
+        if (!respuesta.ok) throw new Error(`B2_DESCARGA_HTTP_${respuesta.status}`)
+        const { url } = await respuesta.json() as { url: string }
+        if (!url) throw new Error('B2_ENLACE_INVALIDO')
+        window.location.href = url
+      } catch {
+        setDownloadError('No se pudo generar el enlace de descarga. Intenta de nuevo.')
+      } finally {
+        setDescargando(false)
+      }
+      return
+    }
     const { data, error } = await supabase.storage.from('lotes').createSignedUrl(actual.resultado_ruta, 60)
     setDescargando(false)
     if (error) {

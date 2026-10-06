@@ -1,5 +1,6 @@
 # Dependencias del proyecto Automatizar_Sistema_Judicial
 beautifulsoup4==4.15.0
+boto3>=1.37,<2
 lxml==6.1.1
 numpy==2.4.2
 openpyxl==3.1.5

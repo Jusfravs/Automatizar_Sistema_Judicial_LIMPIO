@@ -9,8 +9,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from src.almacen_b2 import ClienteB2
 from src.servicio_portal import (
     ClienteStorage,
+    ClienteStorageHibrido,
     ErrorSolicitud,
     RepositorioSolicitudes,
     ServicioPortal,
@@ -37,6 +39,34 @@ EXCEL_PRUEBA = paquete_zip({
 
 
 ID = "6f1c2b9e-1111-4222-8333-444455556666"
+
+
+class TestAlmacenB2(unittest.TestCase):
+    def test_rutas_nuevas_b2_y_antiguas_supabase(self):
+        supabase = MagicMock()
+        b2 = MagicMock()
+        almacen = ClienteStorageHibrido(supabase, b2)
+        almacen.descargar("entradas/antiguo.xlsx")
+        almacen.descargar("b2:entradas/nuevo.xlsx")
+        almacen.subir("b2:resultados/nuevo.xlsx", b"excel")
+        supabase.descargar.assert_called_once_with("entradas/antiguo.xlsx")
+        b2.descargar.assert_called_once_with("b2:entradas/nuevo.xlsx")
+        b2.subir.assert_called_once_with(
+            "b2:resultados/nuevo.xlsx", b"excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    def test_b2_rechaza_rutas_invalidas_y_usa_bucket_privado(self):
+        cliente_s3 = MagicMock()
+        cliente_s3.head_object.return_value = {"ContentLength": 5}
+        cliente_s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"datos")}
+        b2 = ClienteB2("https://s3.us-east-005.backblazeb2.com", "judicial-privado", "id", "clave", cliente=cliente_s3)
+        self.assertEqual(b2.descargar("b2:entradas/archivo.xlsx"), b"datos")
+        cliente_s3.get_object.assert_called_once_with(Bucket="judicial-privado", Key="entradas/archivo.xlsx")
+        cliente_s3.head_object.return_value = {"ContentLength": 21 * 1024 * 1024}
+        with self.assertRaises(ValueError):
+            b2.descargar("b2:entradas/demasiado-grande.xlsx")
+        with self.assertRaises(ValueError):
+            b2.descargar("b2:../otro-archivo.xlsx")
 
 
 def solicitud(**cambios):
@@ -251,6 +281,15 @@ class TestServicioPortal(unittest.TestCase):
         self.assertEqual(solicitudes.final["resultado_ruta"], "resultados/%s.xlsx" % ID)
         self.assertEqual(solicitudes.final["mensaje"], "ERROR_FINAL: 1, PROCESADO: 9")
         self.assertEqual(storage.subidas["resultados/%s.xlsx" % ID], b"final")
+
+    def test_lote_b2_publica_resultado_en_b2(self):
+        (self.lote / "reporte_final.xlsx").write_bytes(b"final")
+        solicitudes = SolicitudesFalsas([solicitud(archivo_ruta=f"b2:entradas/{ID}/{ID}.xlsx")])
+        storage = StorageFalso()
+        self.assertTrue(self.servicio(solicitudes, storage=storage).atender_una())
+        ruta = f"b2:resultados/{ID}.xlsx"
+        self.assertEqual(solicitudes.final["resultado_ruta"], ruta)
+        self.assertEqual(storage.subidas[ruta], b"final")
 
     def test_sin_causas_pendientes_completa_con_mensaje(self):
         solicitudes = SolicitudesFalsas([solicitud()])
