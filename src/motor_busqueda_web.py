@@ -137,29 +137,13 @@ class BotJudicial:
         self._busquedas_enviadas = set()
 
     def iniciar_navegador(self, modo_visible=True):
-        """Inicia el navegador Chromium con bypass anti-automatización para F5 WAF y listener API."""
+        """Inicia Chromium y registra el listener de la API de CAPTCHA."""
         self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(
-            headless=not modo_visible,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-infobars",
-                "--ignore-certificate-errors",
-            ],
-            ignore_default_args=["--enable-automation"]
-        )
+        self.browser = self.playwright.chromium.launch(headless=not modo_visible)
         self.context = self.browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
             viewport={"width": 1366, "height": 768},
-            ignore_https_errors=True
+            locale="es-EC",
         )
-        self.context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            window.navigator.chrome = { runtime: {} };
-            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-            Object.defineProperty(navigator, 'languages', { get: () => ['es-EC', 'es', 'en-US', 'en'] });
-        """)
         self.context.add_init_script("""
             (() => {
                 if (window.__botCaptchaHookInstalado) return;

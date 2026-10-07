@@ -42,27 +42,11 @@ class AgenteExplorador:
         self.error_api_actual = None
 
         self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(
-            headless=not modo_visible,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-infobars",
-                "--ignore-certificate-errors",
-            ],
-            ignore_default_args=["--enable-automation"]
-        )
+        self.browser = self.playwright.chromium.launch(headless=not modo_visible)
         self.context = self.browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
             viewport={"width": 1366, "height": 768},
-            ignore_https_errors=True
+            locale="es-EC",
         )
-        self.context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            window.navigator.chrome = { runtime: {} };
-            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-            Object.defineProperty(navigator, 'languages', { get: () => ['es-EC', 'es', 'en-US', 'en'] });
-        """)
         self.page = self.context.new_page()
 
         # Estas reglas se activan antes de visitar la SPA.
