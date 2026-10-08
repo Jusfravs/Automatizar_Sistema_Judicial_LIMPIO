@@ -75,6 +75,11 @@ export default async function CasoPage({ params, searchParams }: Props) {
       .from('actuaciones_procesales')
       .select(COLUMNAS_ACTUACIONES, { count: 'exact' })
       .eq('numero_causa', causa)
+      // Solo actuaciones con título. Las filas sin título son copias históricas cuyo texto
+      // completo se archivó en Storage el 2/10/2026 (casi todas tienen su gemela con título;
+      // el resto conserva su texto en ese archivo). Decisión de Justin del 8/10/2026.
+      .not('titulo', 'is', null)
+      .neq('titulo', '')
       .order('fecha', { ascending: false })
       .range(desde, desde + ACTUACIONES_POR_PAGINA - 1),
     supabase

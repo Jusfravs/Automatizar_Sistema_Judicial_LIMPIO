@@ -7,7 +7,9 @@ la fotografía operativa y ninguna propuesta de IA la modifica.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
+import re
 import sqlite3
 from typing import Any, Iterable
 
@@ -23,6 +25,22 @@ def _texto(valor: Any) -> str:
     return str(valor or "").strip()
 
 
+LONGITUD_TITULO_DERIVADO = 160
+
+
+def titulo_desde_detalle(detalle: str) -> str:
+    """Primera línea con texto del detalle, sin HTML, como título de respaldo."""
+    plano = re.sub(r"(?i)<br\s*/?>|</(p|div|li|tr|h[1-6])>", "\n", detalle)
+    plano = html.unescape(re.sub(r"<[^>]*>", "", plano))
+    for linea in plano.splitlines():
+        linea = " ".join(linea.split())
+        if linea:
+            if len(linea) <= LONGITUD_TITULO_DERIVADO:
+                return linea
+            return linea[: LONGITUD_TITULO_DERIVADO - 1].rstrip() + "…"
+    return ""
+
+
 def datos_resultado(resultado: dict[str, Any]) -> dict[str, Any]:
     datos = resultado.get("datos")
     return datos if isinstance(datos, dict) else resultado
@@ -31,7 +49,12 @@ def datos_resultado(resultado: dict[str, Any]) -> dict[str, Any]:
 def normalizar_actuaciones(
     numero_causa: str, actuaciones: Iterable[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Conserva el original y asigna una identidad estable a cada actuación."""
+    """Conserva el original y asigna una identidad estable a cada actuación.
+
+    Nunca devuelve actuaciones sin texto: las que no traen título ni detalle se descartan
+    y las que solo traen detalle reciben como título su primera línea. La identidad se
+    calcula con el contenido original, así que no cambia para las actuaciones ya guardadas.
+    """
     normalizadas = []
     vistos = set()
     for actuacion in actuaciones:
@@ -44,6 +67,8 @@ def normalizar_actuaciones(
             or actuacion.get("actuacion") or actuacion.get("nombre")
         )
         detalle = _texto(actuacion.get("detalle") or actuacion.get("descripcion"))
+        if not titulo and not detalle:
+            continue
         contenido = {
             "causa": _texto(numero_causa), "carpeta": carpeta,
             "fecha": fecha, "titulo": titulo, "detalle": detalle,
@@ -53,6 +78,9 @@ def normalizar_actuaciones(
         if identificador in vistos:
             continue
         vistos.add(identificador)
+        titulo = titulo or titulo_desde_detalle(detalle)
+        if not titulo:
+            continue
         normalizadas.append({
             "actuacion_id": identificador,
             "numero_causa": _texto(numero_causa),
