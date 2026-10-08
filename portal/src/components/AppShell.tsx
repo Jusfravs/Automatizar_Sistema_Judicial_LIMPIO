@@ -2,7 +2,6 @@ import Link from 'next/link'
 import { ViewTransition, type ReactNode } from 'react'
 import { MenuMovil, NavPrincipal } from '@/components/AppShellCliente'
 import { BotonBuscarCausa, BuscadorCausas } from '@/components/BuscadorCausas'
-import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { FOCO } from '@/components/ui/estilos'
 import { IconoSalir } from '@/components/ui/iconos'
@@ -36,7 +35,8 @@ function PieUsuario({ nombre, rol }: { nombre: string; rol: string }) {
         <p className="truncate text-sm font-semibold" title={nombre}>
           {nombre}
         </p>
-        <Badge tono="neutral">{rolEtiqueta(rol)}</Badge>
+        {/* Mismo lenguaje translúcido que el menú: sobre la barra azul no va una píldora gris clara. */}
+        <span className="inline-flex rounded-full bg-on-nav/15 px-2.5 py-0.5 text-xs font-medium">{rolEtiqueta(rol)}</span>
       </div>
       <ThemeToggle />
       <form action="/api/auth/signout" method="POST">

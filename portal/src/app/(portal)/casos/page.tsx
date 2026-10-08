@@ -183,6 +183,16 @@ function EncabezadoOrden({ etiqueta, clave, f }: { etiqueta: string; clave: Clav
   )
 }
 
+/** Fase arriba y etapa debajo, igual para el último hito y para el estado actual. */
+function FaseEtapa({ fase, etapa }: { fase: string | null; etapa: string | null }) {
+  return (
+    <div className="min-w-0 text-sm">
+      <p className="text-fg">{fase ?? '—'}</p>
+      {etapa ? <p className="text-xs text-muted">{etapa}</p> : null}
+    </div>
+  )
+}
+
 function columnas(f: Filtros): Columna<ExpedienteLista>[] {
   const orden = (clave: ClaveOrden) =>
     f.orden.clave === clave ? (f.orden.dir === 'asc' ? 'ascending' : 'descending') : undefined
@@ -217,16 +227,17 @@ function columnas(f: Filtros): Columna<ExpedienteLista>[] {
     },
     { clave: 'ciudad', encabezado: 'Ciudad', celda: (c) => <span className="text-sm">{c.ciudad ?? '—'}</span> },
     {
+      clave: 'hito',
+      encabezado: 'Último hito',
+      etiqueta: 'Último hito',
+      celda: (c) => <FaseEtapa fase={c.ultima_fase} etapa={c.ultima_etapa} />,
+    },
+    {
       clave: 'fase',
       encabezado: <EncabezadoOrden etiqueta="Etapa y fase actual" clave="fase" f={f} />,
       etiqueta: 'Etapa y fase actual',
       orden: orden('fase'),
-      celda: (c) => (
-        <div className="min-w-0 text-sm">
-          <p className="text-fg">{c.fase_actual ?? '—'}</p>
-          {c.etapa_actual ? <p className="text-xs text-muted">{c.etapa_actual}</p> : null}
-        </div>
-      ),
+      celda: (c) => <FaseEtapa fase={c.fase_actual} etapa={c.etapa_actual} />,
     },
     {
       clave: 'inicio',
@@ -234,7 +245,7 @@ function columnas(f: Filtros): Columna<ExpedienteLista>[] {
       etiqueta: 'Inicio fase actual',
       orden: orden('inicio'),
       ocultarEnMovil: true,
-      celda: (c) => <span className="text-sm tabular-nums text-muted">{formatFechaProcesal(c.fecha_inicio_fase_actual)}</span>,
+      celda: (c) => <span className="whitespace-nowrap text-sm tabular-nums text-muted">{formatFechaProcesal(c.fecha_inicio_fase_actual)}</span>,
     },
     {
       clave: 'actualizado',
@@ -242,7 +253,7 @@ function columnas(f: Filtros): Columna<ExpedienteLista>[] {
       etiqueta: 'Actualizado',
       orden: orden('actualizado'),
       ocultarEnMovil: true,
-      celda: (c) => <span className="text-sm tabular-nums text-muted">{formatFecha(c.actualizado_en)}</span>,
+      celda: (c) => <span className="whitespace-nowrap text-sm tabular-nums text-muted">{formatFecha(c.actualizado_en)}</span>,
     },
   ]
 }
