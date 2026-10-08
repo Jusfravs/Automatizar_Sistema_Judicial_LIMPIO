@@ -1,15 +1,17 @@
-import type { createClient } from '@/lib/supabase/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/database.types'
 import type { Tono } from '@/lib/tonos'
 
 // El servicio late cada 10 s; tres latidos perdidos ya indican que no está atendiendo.
 export const LATIDO_VENCIDO_MS = 45_000
 
 export type EstadoServidor =
-  | { tipo: 'activo'; procesando: boolean; hace: number; host: string }
-  | { tipo: 'caido'; hace: number | null; host: string | null }
+  | { tipo: 'activo'; procesando: boolean; hace: number; host: string; latidoEn: string }
+  | { tipo: 'caido'; hace: number | null; host: string | null; latidoEn: string | null }
   | { tipo: 'desconocido' }
 
-type Supabase = Awaited<ReturnType<typeof createClient>>
+/** Sirve el cliente del servidor y el del navegador (el pulso de Inicio consulta desde el cliente). */
+type Supabase = SupabaseClient<Database>
 
 /** Último latido de cualquier servidor; `ahora` se recibe para no leer el reloj durante el render. */
 export async function leerEstadoServidor(supabase: Supabase, ahora: number): Promise<EstadoServidor> {
@@ -23,10 +25,15 @@ export async function leerEstadoServidor(supabase: Supabase, ahora: number): Pro
     console.error('No se pudo leer el estado del servidor:', error.message)
     return { tipo: 'desconocido' }
   }
-  if (!data) return { tipo: 'caido', hace: null, host: null }
-  const hace = Math.max(0, ahora - new Date(data.latido_en).getTime())
-  if (hace > LATIDO_VENCIDO_MS) return { tipo: 'caido', hace, host: data.worker_host }
-  return { tipo: 'activo', procesando: data.estado === 'PROCESANDO', hace, host: data.worker_host }
+  if (!data) return { tipo: 'caido', hace: null, host: null, latidoEn: null }
+  return evaluarLatido(data.latido_en, data.estado === 'PROCESANDO', data.worker_host, ahora)
+}
+
+/** Clasifica un latido según su antigüedad; el pulso de Inicio lo reevalúa cada segundo. */
+export function evaluarLatido(latidoEn: string, procesando: boolean, host: string, ahora: number): EstadoServidor {
+  const hace = Math.max(0, ahora - new Date(latidoEn).getTime())
+  if (hace > LATIDO_VENCIDO_MS) return { tipo: 'caido', hace, host, latidoEn }
+  return { tipo: 'activo', procesando, hace, host, latidoEn }
 }
 
 export function describirHace(ms: number | null): string {
