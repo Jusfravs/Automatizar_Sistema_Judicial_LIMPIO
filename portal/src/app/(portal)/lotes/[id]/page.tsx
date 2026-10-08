@@ -28,11 +28,10 @@ export default async function LoteIdPage({ params }: Props) {
   const { id } = await params
   const supabase = await createClient()
 
-  const { data, error } = await supabase
-    .from('solicitudes_lote')
-    .select(COLUMNAS_SOLICITUD)
-    .eq('id', id)
-    .maybeSingle()
+  const [{ data, error }, { data: sesion }] = await Promise.all([
+    supabase.from('solicitudes_lote').select(`${COLUMNAS_SOLICITUD}, solicitado_por`).eq('id', id).maybeSingle(),
+    supabase.auth.getUser(),
+  ])
 
   if (error) {
     console.error('No se pudo cargar el lote:', error.message)
@@ -43,7 +42,18 @@ export default async function LoteIdPage({ params }: Props) {
     )
   }
   if (!data) notFound()
-  const solicitud = data as SolicitudDetalle
+  const solicitud = data as SolicitudDetalle & { solicitado_por: string }
+
+  // Cancelar: solo quien creó el lote o un administrador (la RPC lo exige desde la migración 008).
+  let puedeGestionar = false
+  if (sesion.user) {
+    if (solicitud.solicitado_por === sesion.user.id) {
+      puedeGestionar = true
+    } else {
+      const { data: perfil } = await supabase.from('perfiles').select('rol').eq('id', sesion.user.id).maybeSingle()
+      puedeGestionar = perfil?.rol === 'admin'
+    }
+  }
 
   const [estado, cola, servidor] = await Promise.all([
     solicitud.perfil
@@ -76,6 +86,7 @@ export default async function LoteIdPage({ params }: Props) {
       estadoEjecucion={(estado?.data as EstadoEjecucion | null) ?? null}
       colaErrores={(cola?.data as ColaError[] | null) ?? []}
       avisoServidor={servidor.tipo === 'caido' ? textoServidor(servidor) : null}
+      puedeGestionar={puedeGestionar}
     />
   )
 }
