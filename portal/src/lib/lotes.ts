@@ -49,7 +49,7 @@ export const ESTADO_ETIQUETAS: Record<string, string> = {
 export const MODO_ETIQUETAS: Record<string, string> = {
   solo: 'Una causa',
   lote: 'Lote de N causas',
-  pendientes: 'Todas las pendientes',
+  pendientes: 'Todas',
 }
 
 export const FILTROS_DEFAULTS = {

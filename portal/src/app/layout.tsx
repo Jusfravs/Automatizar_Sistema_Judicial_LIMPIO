@@ -32,7 +32,7 @@ export const metadata: Metadata = {
 };
 
 // Aplica el tema guardado antes del primer pintado para evitar el destello claro/oscuro.
-// Debe coincidir con aplicarTema() de src/components/ui/ThemeToggle.tsx.
+// Debe coincidir con guardarTema() de src/components/ui/ThemeToggle.tsx (sin elección: sigue al sistema).
 const SCRIPT_TEMA =
   "(function(){try{var t=localStorage.getItem('tema');if(t==='light'||t==='dark'){document.documentElement.dataset.theme=t}}catch(e){}})()";
 

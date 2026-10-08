@@ -12,7 +12,7 @@ export const CASOS_POR_PAGINA = 50
 export const ACTUACIONES_POR_PAGINA = 100
 
 export type ExpedienteLista = Pick<ExpedienteRow,
-  'numero_causa' | 'ciudad' | 'estado' | 'etapa_actual' | 'fase_actual' |
+  'numero_causa' | 'ciudad' | 'estado' | 'ultima_etapa' | 'ultima_fase' | 'etapa_actual' | 'fase_actual' |
   'fecha_inicio_fase_actual' | 'actualizado_en'>
 
 export type ExpedienteDetalle = Pick<ExpedienteRow,
@@ -29,7 +29,7 @@ export type Etapa = Pick<EtapaRow, 'eta_id' | 'nombre'>
 export type Fase = Pick<FaseRow, 'fas_id' | 'eta_id' | 'nombre'>
 
 export const COLUMNAS_EXPEDIENTE_LISTA =
-  'numero_causa, ciudad, estado, etapa_actual, fase_actual, fecha_inicio_fase_actual, actualizado_en'
+  'numero_causa, ciudad, estado, ultima_etapa, ultima_fase, etapa_actual, fase_actual, fecha_inicio_fase_actual, actualizado_en'
 export const COLUMNAS_EXPEDIENTE_DETALLE =
   'numero_causa, ciudad, estado, ultima_etapa, ultima_fase, fecha_fin_ultima_fase, etapa_actual, fase_actual, fecha_inicio_fase_actual, mensaje_especial, actor, demandado, tipo_accion, fecha_inicio_juicio, total_actuaciones, actualizado_en'
 export const COLUMNAS_ACTUACIONES = 'actuacion_id, carpeta, fecha, titulo, detalle'
