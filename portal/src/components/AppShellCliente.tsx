@@ -2,8 +2,9 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useId, useRef, useState, type ComponentType, type FocusEvent, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, ViewTransition, type ComponentType, type FocusEvent, type MouseEvent, type ReactNode } from 'react'
 import { cx } from '@/lib/cx'
+import { NAVEGACION } from '@/lib/transiciones'
 import { FOCO } from '@/components/ui/estilos'
 import { IconoCasos, IconoCerrar, IconoInicio, IconoLotes, IconoMenu } from '@/components/ui/iconos'
 
@@ -27,7 +28,7 @@ function estaActivo(pathname: string, href: string): boolean {
 function ContadorPendientes({ n }: { n: number }) {
   const texto = n === 1 ? '1 revisión pendiente' : `${n} revisiones pendientes`
   return (
-    <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-semibold text-on-accent tabular-nums">
+    <span className="relative ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-semibold text-on-accent tabular-nums">
       <span aria-hidden="true">{n > 99 ? '99+' : n}</span>
       <span className="sr-only">{texto}</span>
     </span>
@@ -35,10 +36,39 @@ function ContadorPendientes({ n }: { n: number }) {
 }
 
 /**
+ * Resaltado del ítem activo: fondo + barra ámbar en una sola pieza. Con `compartido`, es un
+ * elemento compartido entre navegaciones: al cambiar de sección se desliza al nuevo ítem con el
+ * muelle (globals.css, clase "indicador") en lugar de apagarse y encenderse.
+ */
+function Resaltado({ compartido }: { compartido: boolean }) {
+  const pieza = (
+    <span aria-hidden="true" className="absolute inset-0 rounded-control bg-on-nav/15">
+      <span className="absolute inset-y-1.5 left-0 w-0.75 rounded-full bg-(--nav-indicador)" />
+    </span>
+  )
+  if (!compartido) return pieza
+  return (
+    <ViewTransition name="nav-resaltado" share="indicador" default="none">
+      {pieza}
+    </ViewTransition>
+  )
+}
+
+/**
  * Menú principal. Va sobre la barra (bg-nav): hereda text-on-nav.
  * Ítem activo = aria-current + barra ámbar + fondo + peso (el ámbar nunca es la única señal).
+ * `resaltadoCompartido` solo en una instancia montada a la vez (la barra lateral): el nombre de
+ * una View Transition debe ser único en la página.
  */
-export function NavPrincipal({ pendientes, className }: { pendientes: number | null; className?: string }) {
+export function NavPrincipal({
+  pendientes,
+  className,
+  resaltadoCompartido = false,
+}: {
+  pendientes: number | null
+  className?: string
+  resaltadoCompartido?: boolean
+}) {
   const pathname = usePathname()
   return (
     <nav aria-label="Navegación principal" className={className}>
@@ -49,18 +79,17 @@ export function NavPrincipal({ pendientes, className }: { pendientes: number | n
             <li key={href}>
               <Link
                 href={href}
+                transitionTypes={NAVEGACION}
                 aria-current={activo ? 'page' : undefined}
                 className={cx(
                   'relative flex h-9 items-center gap-3 rounded-control px-3 text-sm transition-colors',
                   FOCO,
-                  activo ? 'bg-on-nav/15 font-semibold' : 'font-medium text-on-nav/85 hover:bg-on-nav/10 hover:text-on-nav',
+                  activo ? 'font-semibold' : 'font-medium text-on-nav/85 hover:bg-on-nav/10 hover:text-on-nav',
                 )}
               >
-                {activo ? (
-                  <span aria-hidden="true" className="absolute inset-y-1.5 left-0 w-0.75 rounded-full bg-(--nav-indicador)" />
-                ) : null}
-                <Icono className="size-4 shrink-0" />
-                <span className="truncate">{etiqueta}</span>
+                {activo ? <Resaltado compartido={resaltadoCompartido} /> : null}
+                <Icono className="relative size-4 shrink-0" />
+                <span className="relative truncate">{etiqueta}</span>
                 {conPendientes && pendientes ? <ContadorPendientes n={pendientes} /> : null}
               </Link>
             </li>
@@ -76,7 +105,18 @@ export function NavPrincipal({ pendientes, className }: { pendientes: number | n
  * El panel se cierra al navegar (se abre "para" una ruta), con Escape, al pulsar un enlace
  * y cuando el foco sale de la cabecera.
  */
-export function MenuMovil({ marca, pie, pendientes }: { marca: ReactNode; pie: ReactNode; pendientes: number | null }) {
+export function MenuMovil({
+  marca,
+  pie,
+  pendientes,
+  acciones,
+}: {
+  marca: ReactNode
+  pie: ReactNode
+  pendientes: number | null
+  /** Botones extra a la izquierda del menú (p. ej. buscar). */
+  acciones?: ReactNode
+}) {
   const pathname = usePathname()
   const [rutaAbierta, setRutaAbierta] = useState<string | null>(null)
   const abierto = rutaAbierta === pathname
@@ -111,23 +151,26 @@ export function MenuMovil({ marca, pie, pendientes }: { marca: ReactNode; pie: R
     >
       <div className="flex h-14 items-center justify-between gap-3 px-4">
         {marca}
-        <button
-          ref={botonRef}
-          type="button"
-          aria-expanded={abierto}
-          aria-controls={panelId}
-          onClick={() => setRutaAbierta(abierto ? null : pathname)}
-          className={cx('grid size-10 place-items-center rounded-control transition-colors hover:bg-on-nav/10', FOCO)}
-        >
-          {abierto ? <IconoCerrar className="size-5" /> : <IconoMenu className="size-5" />}
-          <span className="sr-only">Menú</span>
-        </button>
+        <div className="flex items-center gap-1">
+          {acciones}
+          <button
+            ref={botonRef}
+            type="button"
+            aria-expanded={abierto}
+            aria-controls={panelId}
+            onClick={() => setRutaAbierta(abierto ? null : pathname)}
+            className={cx('grid size-10 place-items-center rounded-control transition-colors hover:bg-on-nav/10', FOCO)}
+          >
+            {abierto ? <IconoCerrar className="size-5" /> : <IconoMenu className="size-5" />}
+            <span className="sr-only">Menú</span>
+          </button>
+        </div>
       </div>
       <div
         id={panelId}
         hidden={!abierto}
         onClick={alPulsarPanel}
-        className="fixed inset-x-0 top-14 bottom-0 overflow-y-auto border-t border-on-nav/15 bg-nav transition duration-(--duracion-base) ease-salida starting:-translate-y-1 starting:opacity-0"
+        className="panel-desplegable fixed inset-x-0 top-14 bottom-0 overflow-y-auto border-t border-on-nav/15 bg-nav"
       >
         <div className="space-y-6 px-4 py-4">
           <NavPrincipal pendientes={pendientes} />

@@ -6,14 +6,24 @@ export type Columna<T> = {
   /** Clave estable de la columna (key de React). */
   clave: string
   encabezado: ReactNode
-  celda: (fila: T) => ReactNode
+  /**
+   * Texto plano del encabezado para las tarjetas móviles. Obligatorio si `encabezado` es interactivo
+   * (p. ej. un enlace para ordenar): en la tarjeta no debe repetirse el control.
+   */
+  etiqueta?: string
+  /** `vista` dice si se pinta en la tabla (md+) o en la tarjeta móvil: sirve para no repetir nombres únicos. */
+  celda: (fila: T, vista: VistaCelda) => ReactNode
   /** Clases para th y td en escritorio (alineación, ancho, font-mono…). */
   className?: string
   /** No se muestra en la tarjeta móvil (datos secundarios). */
   ocultarEnMovil?: boolean
   /** Título de la tarjeta móvil. Si ninguna lo es, se usa la primera columna. */
   principal?: boolean
+  /** Orden activo de la columna: se anuncia con aria-sort en su cabecera. */
+  orden?: 'ascending' | 'descending'
 }
+
+export type VistaCelda = 'tabla' | 'tarjeta'
 
 export type DataTableProps<T> = {
   columnas: readonly Columna<T>[]
@@ -50,7 +60,8 @@ export function DataTable<T>({ columnas, filas, claveFila, vacio, etiqueta, clas
                 <th
                   key={c.clave}
                   scope="col"
-                  className={cx('px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted', c.className)}
+                  aria-sort={c.orden}
+                  className={cx('px-3 py-2 text-left text-rotulo font-semibold uppercase text-muted', c.className)}
                 >
                   {c.encabezado}
                 </th>
@@ -62,7 +73,7 @@ export function DataTable<T>({ columnas, filas, claveFila, vacio, etiqueta, clas
               <tr key={claveFila(fila)} className="transition-colors hover:bg-(--tabla-fila-hover)">
                 {columnas.map((c) => (
                   <td key={c.clave} className={cx('px-3 py-2 align-top text-fg', c.className)}>
-                    {c.celda(fila)}
+                    {c.celda(fila, 'tabla')}
                   </td>
                 ))}
               </tr>
@@ -74,13 +85,13 @@ export function DataTable<T>({ columnas, filas, claveFila, vacio, etiqueta, clas
       <ul className="space-y-3 md:hidden" aria-label={etiqueta}>
         {filas.map((fila) => (
           <li key={claveFila(fila)} className="rounded-tarjeta bg-surface p-4 shadow-tarjeta">
-            {principal ? <div className="text-sm font-semibold text-fg">{principal.celda(fila)}</div> : null}
+            {principal ? <div className="min-w-0 text-sm font-semibold text-fg [overflow-wrap:anywhere]">{principal.celda(fila, 'tarjeta')}</div> : null}
             {resto.length > 0 ? (
               <dl className="mt-3 space-y-2">
                 {resto.map((c) => (
                   <div key={c.clave} className="flex items-baseline justify-between gap-4">
-                    <dt className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted">{c.encabezado}</dt>
-                    <dd className="min-w-0 text-right text-sm text-fg">{c.celda(fila)}</dd>
+                    <dt className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted">{c.etiqueta ?? c.encabezado}</dt>
+                    <dd className="min-w-0 text-right text-sm text-fg">{c.celda(fila, 'tarjeta')}</dd>
                   </div>
                 ))}
               </dl>

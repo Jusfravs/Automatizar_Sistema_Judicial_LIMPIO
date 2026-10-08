@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { ViewTransition, type ReactNode } from 'react'
 import { MenuMovil, NavPrincipal } from '@/components/AppShellCliente'
+import { BotonBuscarCausa, BuscadorCausas } from '@/components/BuscadorCausas'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { FOCO } from '@/components/ui/estilos'
@@ -8,6 +9,7 @@ import { IconoSalir } from '@/components/ui/iconos'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { cx } from '@/lib/cx'
 import { rolEtiqueta } from '@/lib/roles'
+import { NAVEGACION } from '@/lib/transiciones'
 
 export type AppShellProps = {
   nombre: string
@@ -19,7 +21,7 @@ export type AppShellProps = {
 
 function Marca() {
   return (
-    <Link href="/" className={cx('flex items-center gap-2.5 rounded-control', FOCO)}>
+    <Link href="/" transitionTypes={NAVEGACION} className={cx('flex items-center gap-2.5 rounded-control', FOCO)}>
       {/* Detalle ámbar: relleno sobre azul (4,59:1), nunca texto ámbar. */}
       <span aria-hidden="true" className="h-5 w-1 shrink-0 rounded-full bg-accent" />
       <span className="font-serif text-lg font-semibold tracking-tight">Gestión Judicial</span>
@@ -70,14 +72,25 @@ export function AppShell({ nombre, rol, pendientes, children }: AppShellProps) {
         <div className="flex h-16 shrink-0 items-center px-5">
           <Marca />
         </div>
-        <NavPrincipal pendientes={pendientes} className="flex-1 overflow-y-auto px-3 py-2" />
+        <div className="shrink-0 px-3 pb-3">
+          <BotonBuscarCausa variante="barra" />
+        </div>
+        <NavPrincipal pendientes={pendientes} resaltadoCompartido className="flex-1 overflow-y-auto px-3 py-2" />
         <div className="shrink-0 border-t border-on-nav/15 p-4">{pie}</div>
       </aside>
 
-      <MenuMovil marca={<Marca />} pie={pie} pendientes={pendientes} />
+      <MenuMovil marca={<Marca />} pie={pie} pendientes={pendientes} acciones={<BotonBuscarCausa variante="icono" />} />
+      <BuscadorCausas />
 
       <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-7xl px-4 py-6 outline-none sm:px-6 lg:px-8 lg:py-8">
-        {children}
+        {/*
+          Transición entre pantallas. El shell vive en el layout de (portal), así que este límite
+          persiste. Solo las navegaciones con tipo "navegacion" (lib/transiciones) funden el
+          contenido; refrescos, filtros, orden y cargas tras el esqueleto son silenciosos.
+        */}
+        <ViewTransition update={{ navegacion: 'pagina', default: 'none' }} default="none">
+          <div>{children}</div>
+        </ViewTransition>
       </main>
     </div>
   )

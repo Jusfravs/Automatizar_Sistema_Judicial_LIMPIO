@@ -1,19 +1,21 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Montserrat, Source_Serif_4 } from "next/font/google";
+import { Geist_Mono, Public_Sans, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 
 // next/font/google descarga las fuentes al construir y las sirve desde el propio dominio (CSP: font-src 'self').
-const montserrat = Montserrat({
-  variable: "--font-montserrat",
+// Public Sans (USWDS): sobria, de lectura institucional y con cifras tabulares para tablas densas.
+const publicSans = Public_Sans({
+  variable: "--font-public-sans",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
+// Variable con eje óptico: los títulos grandes usan el corte de display y los pequeños el de texto.
 const sourceSerif = Source_Serif_4({
   variable: "--font-source-serif",
   subsets: ["latin"],
-  weight: ["600", "700"],
+  axes: ["opsz"],
   display: "swap",
 });
 
@@ -39,7 +41,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="es"
       suppressHydrationWarning
-      className={`${montserrat.variable} ${sourceSerif.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${publicSans.variable} ${sourceSerif.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
         {/*

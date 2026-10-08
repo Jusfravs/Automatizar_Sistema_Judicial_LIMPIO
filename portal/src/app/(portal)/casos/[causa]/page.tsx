@@ -28,8 +28,9 @@ import {
   type ParEtapaFase,
   type RevisionDetalle,
 } from '@/lib/casos'
+import { NumeroCausaCompartido } from '@/components/NumeroCausa'
 import DetalleActuacion from './DetalleActuacion'
-import RevisionForm from './RevisionForm'
+import RevisionForm, { type ColaRevision } from './RevisionForm'
 
 export const metadata = { title: 'Detalle de la causa' }
 
@@ -122,6 +123,20 @@ export default async function CasoPage({ params, searchParams }: Props) {
     }
   }
 
+  // Cola de revisión: posición de esta causa entre las pendientes y la siguiente a revisar.
+  let cola: ColaRevision | null = null
+  if (revision?.estado === 'PENDIENTE') {
+    const pend = await supabase.from('revisiones_ia').select('numero_causa').eq('estado', 'PENDIENTE').order('id').limit(1000)
+    if (pend.error) {
+      console.error('No se pudo leer la cola de revisiones:', pend.error.message)
+    } else {
+      const causas = [...new Set((pend.data ?? []).map((r) => r.numero_causa))]
+      const indice = causas.indexOf(causa)
+      const resto = indice >= 0 ? [...causas.slice(indice + 1), ...causas.slice(0, indice)] : causas.filter((c) => c !== causa)
+      cola = { posicion: indice >= 0 ? indice + 1 : null, total: causas.length, siguiente: resto[0] ?? null }
+    }
+  }
+
   const ia = leerDecisionIA(auditoria?.decision_json ?? null)
   const evidencias = new Set(ia.evidencias)
   const describirPar = (par: ParEtapaFase | null) =>
@@ -131,7 +146,7 @@ export default async function CasoPage({ params, searchParams }: Props) {
   return (
     <div className="space-y-6">
       <PageHeader
-        titulo={expediente.numero_causa}
+        titulo={<NumeroCausaCompartido numero={expediente.numero_causa}>{expediente.numero_causa}</NumeroCausaCompartido>}
         tituloMono
         descripcion={`Actualizado: ${formatFecha(expediente.actualizado_en)}`}
         migas={[{ etiqueta: 'Casos', href: '/casos' }, { etiqueta: expediente.numero_causa }]}
@@ -216,7 +231,7 @@ export default async function CasoPage({ params, searchParams }: Props) {
                         >
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                             <span className="text-sm font-semibold tabular-nums text-fg">{formatFechaProcesal(a.fecha)}</span>
-                            {a.carpeta ? <span className="text-xs text-muted">{a.carpeta}</span> : null}
+                            {a.carpeta ? <span className="min-w-0 text-xs text-muted [overflow-wrap:anywhere]">{a.carpeta}</span> : null}
                             {esEvidencia && <Badge tono="info">Evidencia IA</Badge>}
                           </div>
                           <DetalleActuacion texto={textoPlano(a.titulo)} destacado />
@@ -237,7 +252,8 @@ export default async function CasoPage({ params, searchParams }: Props) {
           </Card>
         </div>
 
-        <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
+        {/* Si es más alta que la pantalla, desplaza por dentro: "Guardar y siguiente" siempre alcanzable. */}
+        <div className="space-y-6 lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:self-start lg:overflow-y-auto lg:overscroll-contain lg:p-1 lg:-m-1">
           <Card>
             <CardHeader
               titulo="Auditoría de IA"
@@ -289,7 +305,15 @@ export default async function CasoPage({ params, searchParams }: Props) {
               <CardBody>
                 {errorRevision && <Alert tono="atencion">No se pudo cargar la revisión. Recarga la página.</Alert>}
                 {revision?.estado === 'PENDIENTE' && (
-                  <RevisionForm auditoriaId={auditoria.id} permiteAceptarIA={puedeAceptarIA(ia)} etapas={etapas} fases={fases} />
+                  <RevisionForm
+                    key={auditoria.id}
+                    auditoriaId={auditoria.id}
+                    causa={causa}
+                    cola={cola}
+                    permiteAceptarIA={puedeAceptarIA(ia)}
+                    etapas={etapas}
+                    fases={fases}
+                  />
                 )}
                 {revision?.estado === 'RESUELTA' && (
                   <dl className="space-y-3">

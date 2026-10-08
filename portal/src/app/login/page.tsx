@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, FormEvent } from 'react'
+import { useEffect, useRef, useState, FormEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { inicioPorRol } from '@/lib/roles'
@@ -16,6 +16,13 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // Cada error nuevo mueve el foco al aviso: el foco no queda perdido en <body>.
+  const [intentoFallido, setIntentoFallido] = useState(0)
+  const aviso = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (intentoFallido > 0) aviso.current?.focus()
+  }, [intentoFallido])
   const router = useRouter()
   const supabase = createClient()
 
@@ -30,15 +37,17 @@ export default function LoginPage() {
     })
 
     if (signInError) {
-      setError('Credenciales inválidas')
+      setError('El correo o la contraseña no son correctos. Revísalos e inténtalo de nuevo.')
       setLoading(false)
+      setIntentoFallido((n) => n + 1)
       return
     }
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
-      setError('No se pudo obtener el usuario')
+      setError('No se pudo comprobar tu cuenta. Inténtalo de nuevo en unos segundos.')
       setLoading(false)
+      setIntentoFallido((n) => n + 1)
       return
     }
 
@@ -65,17 +74,42 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen bg-bg">
-      <aside className="hidden flex-col justify-center bg-nav px-12 py-12 text-on-nav lg:flex lg:w-2/5">
-        <div className="max-w-sm space-y-4">
-          <div className="flex items-center gap-3">
-            <span aria-hidden="true" className="h-10 w-1.5 shrink-0 rounded-full bg-accent" />
-            <p className="font-serif text-4xl font-semibold tracking-tight">Gestión Judicial</p>
-          </div>
-          <p className="text-base leading-relaxed text-on-nav/80">Consulta y clasificación de causas judiciales</p>
+      <aside className="relative hidden flex-col justify-between overflow-hidden bg-nav px-12 py-10 text-on-nav lg:flex lg:w-5/12">
+        {/* Signo de sección (§): referencia jurídica discreta, solo decorativa. */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-24 -right-10 select-none font-serif text-[26rem] leading-none text-on-nav/5"
+        >
+          §
+        </span>
+
+        <div className="flex items-center gap-2.5">
+          <span aria-hidden="true" className="h-5 w-1 shrink-0 rounded-full bg-accent" />
+          <span className="font-serif text-lg font-semibold tracking-tight">Gestión Judicial</span>
         </div>
+
+        <div className="entrada-escalonada relative max-w-md space-y-8">
+          <p className="font-serif text-display font-semibold text-balance">
+            Consulta y clasificación de causas judiciales
+          </p>
+          <ul className="space-y-3 text-sm text-on-nav/85">
+            {[
+              'Consulta automatizada de causas en e-SATJE',
+              'Clasificación por etapa y fase procesal',
+              'Revisión humana de la clasificación asistida por IA',
+            ].map((texto) => (
+              <li key={texto} className="flex items-start gap-3">
+                <span aria-hidden="true" className="mt-2 h-px w-4 shrink-0 bg-accent" />
+                {texto}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="relative text-xs text-on-nav/70">Acceso exclusivo para personal autorizado.</p>
       </aside>
 
-      <div className="flex w-full flex-col items-center justify-center gap-8 p-4 sm:p-6 lg:w-3/5 lg:p-12">
+      <div className="entrada-escalonada flex w-full flex-col items-center justify-center gap-8 p-4 sm:p-6 lg:w-7/12 lg:p-12">
         <div className="flex items-center gap-2.5 lg:hidden">
           <span aria-hidden="true" className="h-6 w-1 shrink-0 rounded-full bg-accent" />
           <p className="font-serif text-xl font-semibold tracking-tight text-fg">Gestión Judicial</p>
@@ -92,6 +126,8 @@ export default function LoginPage() {
               <Field label="Correo electrónico" htmlFor="email">
                 <Input
                   {...a11yCampo('email', {})}
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? 'error-login' : undefined}
                   type="email"
                   autoComplete="email"
                   required
@@ -105,6 +141,8 @@ export default function LoginPage() {
                 <div className="relative">
                   <Input
                     {...a11yCampo('password', {})}
+                    aria-invalid={error ? true : undefined}
+                    aria-describedby={error ? 'error-login' : undefined}
                     type={showPassword ? 'text' : 'password'}
                     autoComplete="current-password"
                     required
@@ -119,18 +157,21 @@ export default function LoginPage() {
                     tamano="sm"
                     onClick={togglePassword}
                     aria-pressed={showPassword}
+                    aria-label="Mostrar contraseña"
                     aria-controls="password"
                     className="absolute right-1 top-1/2 -translate-y-1/2"
                   >
-                    {showPassword ? 'Ocultar' : 'Mostrar'}
+                    Mostrar
                   </Button>
                 </div>
               </Field>
 
               {error && (
-                <Alert tono="peligro" rol="alert">
-                  {error}
-                </Alert>
+                <div ref={aviso} id="error-login" tabIndex={-1} className="animate-subir rounded-tarjeta outline-none">
+                  <Alert tono="peligro" rol="alert">
+                    {error}
+                  </Alert>
+                </div>
               )}
 
               <Button type="submit" cargando={loading} className="w-full">
@@ -139,6 +180,8 @@ export default function LoginPage() {
             </form>
           </CardBody>
         </Card>
+
+        <p className="text-xs text-muted lg:hidden">Acceso exclusivo para personal autorizado.</p>
       </div>
     </main>
   )

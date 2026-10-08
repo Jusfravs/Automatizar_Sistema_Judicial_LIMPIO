@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { NAVEGACION } from '@/lib/transiciones'
 import { createClient } from '@/lib/supabase/server'
 import {
   Alert,
@@ -104,7 +105,7 @@ export default async function LotesPage({
       principal: true,
       celda: (s) => (
         <div className="min-w-0">
-          <Link href={`/lotes/${s.id}`} className={cx('rounded-sm font-medium text-fg underline-offset-2 transition-colors hover:text-primary hover:underline', FOCO)}>
+          <Link href={`/lotes/${s.id}`} transitionTypes={NAVEGACION} className={cx('rounded-sm font-medium text-fg underline-offset-2 transition-colors [overflow-wrap:anywhere] hover:text-primary hover:underline', FOCO)}>
             {s.archivo_nombre}
           </Link>
           <p className="text-xs text-muted">
@@ -127,9 +128,10 @@ export default async function LotesPage({
         if (!ejecucion) return <span className="text-sm text-muted">—</span>
         const v = calcularAvance(ejecucion)
         return (
-          <div className="flex items-center gap-2">
-            <ProgressBar className="w-24" valor={v} etiqueta={`Avance de ${s.archivo_nombre}`} />
-            <span className="text-sm tabular-nums text-muted">{v} %</span>
+          <div className="flex items-center justify-end gap-2 md:justify-start">
+            <ProgressBar className="w-20 shrink md:w-24" valor={v} etiqueta={`Avance de ${s.archivo_nombre}`} />
+            {/* Cifra y signo juntos: en tarjetas estrechas "100 %" se partía en dos líneas. */}
+            <span className="shrink-0 whitespace-nowrap text-sm tabular-nums text-muted">{v}&nbsp;%</span>
           </div>
         )
       },

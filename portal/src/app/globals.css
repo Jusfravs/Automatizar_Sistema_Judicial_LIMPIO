@@ -10,7 +10,7 @@
  *
  * Tema: claro por defecto; oscuro si el sistema lo pide (salvo data-theme="light")
  * o si <html data-theme="dark">. Los dos bloques oscuros deben mantenerse idénticos.
- * Contraste WCAG AA verificado par a par (ver system.md, sección Contraste).
+ * Contraste WCAG AA verificado par a par (ver docs/system.md, sección 5).
  */
 
 /* ---------- 1. Primitivos de marca (no dependen del tema) ---------- */
@@ -31,6 +31,8 @@
   --duracion-lenta: 240ms; /* modales, paneles */
   --curva-salida: cubic-bezier(0.23, 1, 0.32, 1); /* entradas e interacción */
   --curva-movimiento: cubic-bezier(0.77, 0, 0.175, 1); /* desplazamiento en pantalla */
+  --duracion-pagina: 200ms; /* fundido entre pantallas (solo navegación explícita) */
+  --escalon: 40ms; /* retraso entre elementos de una entrada escalonada */
 
   /* Capas de apilamiento */
   --z-cabecera: 10;
@@ -323,9 +325,21 @@
   --color-atencion-on-solid: var(--atencion-on-solid);
 
   /* Tipografía (las variables --font-montserrat / --font-source-serif las define layout.tsx con next/font) */
-  --font-sans: var(--font-montserrat, "Montserrat"), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-sans: var(--font-public-sans, "Public Sans"), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   --font-serif: var(--font-source-serif, "Source Serif 4"), Georgia, "Times New Roman", serif;
   --font-mono: var(--font-geist-mono, ui-monospace), ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  /* Escala tipográfica con nombre de uso (las de Tailwind siguen para texto corrido y controles).
+     titulo: h1 de cada pantalla (serif). display: cifras protagonistas (KPI, porcentaje del lote). */
+  --text-titulo: 1.75rem;
+  --text-titulo--line-height: 1.2;
+  --text-titulo--letter-spacing: -0.012em;
+  --text-display: 2.5rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.025em;
+  --text-rotulo: 0.6875rem; /* cabeceras de tabla y rótulos en versalitas */
+  --text-rotulo--line-height: 1rem;
+  --text-rotulo--letter-spacing: 0.06em;
 
   /* Radios con nombre de uso (no pisan rounded-sm/md/lg heredados) */
   --radius-control: 6px; /* botones, inputs, chips cuadrados */
@@ -340,6 +354,12 @@
   /* Movimiento: ease-salida / ease-movimiento; duración vía duration-(--duracion-base) */
   --ease-salida: var(--curva-salida);
   --ease-movimiento: var(--curva-movimiento);
+  --animate-aparecer: aparecer var(--duracion-lenta) var(--curva-salida) backwards;
+  --animate-subir: subir var(--duracion-lenta) var(--curva-salida) backwards;
+  /* Una onda por latido real (el componente la reinicia con key), no un pulso infinito. */
+  --animate-latido: latido 1.2s var(--curva-salida) forwards;
+  /* Progreso continuo: linear es la excepción correcta. */
+  --animate-barrido: barrido 1.2s linear infinite;
   --default-transition-duration: var(--duracion-rapida);
   --default-transition-timing-function: var(--curva-salida);
 }
@@ -348,15 +368,205 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
+  font-optical-sizing: auto;
 }
 
+/* ---------- 4. Movimiento (docs/system.md, sección 3) ---------- */
+
+@keyframes aparecer {
+  from { opacity: 0; }
+}
+
+@keyframes desvanecer {
+  to { opacity: 0; }
+}
+
+@keyframes subir {
+  from { opacity: 0; translate: 0 6px; }
+}
+
+/* Onda que sale del punto de estado "vivo" (servidor activo). Solo opacidad y escala. */
+@keyframes latido {
+  0% { opacity: 0.55; scale: 1; }
+  100% { opacity: 0; scale: 2.4; }
+}
+
+/* Barra indeterminada fina: "cargando sin porcentaje". Recorre el ancho completo y sale entera. */
+@keyframes barrido {
+  from { translate: -100% 0; }
+  to { translate: 300% 0; }
+}
+
+/*
+ * Entrada escalonada: los hijos aparecen subiendo 6px, uno tras otro (máx. 6 escalones).
+ * Solo para vistas que se ven una vez por sesión (login), nunca en navegación repetida ni en
+ * listas que se paginan.
+ */
+.entrada-escalonada > * {
+  animation: var(--animate-subir);
+}
+.entrada-escalonada > :nth-child(2) { animation-delay: calc(var(--escalon) * 1); }
+.entrada-escalonada > :nth-child(3) { animation-delay: calc(var(--escalon) * 2); }
+.entrada-escalonada > :nth-child(4) { animation-delay: calc(var(--escalon) * 3); }
+.entrada-escalonada > :nth-child(5) { animation-delay: calc(var(--escalon) * 4); }
+.entrada-escalonada > :nth-child(n + 6) { animation-delay: calc(var(--escalon) * 5); }
+
+/*
+ * Modal nativo con entrada y salida (más corta). La salida necesita la propiedad `overlay`
+ * (allow-discrete): donde no existe, el cierre es inmediato en vez de saltar fuera de la capa
+ * superior. Las paletas que se abren por teclado (buscador) usan Dialog sin esta clase.
+ */
+.dialogo-animado,
+.dialogo-animado::backdrop {
+  transition-property: opacity, scale;
+  transition-duration: var(--duracion-lenta);
+  transition-timing-function: var(--curva-salida);
+}
+.dialogo-animado[open] { opacity: 1; scale: 1; }
+.dialogo-animado[open]::backdrop { opacity: 1; }
+@starting-style {
+  .dialogo-animado[open] { opacity: 0; scale: 0.97; }
+  .dialogo-animado[open]::backdrop { opacity: 0; }
+}
+@supports (overlay: auto) {
+  .dialogo-animado,
+  .dialogo-animado::backdrop {
+    transition-property: opacity, scale, display, overlay;
+    transition-behavior: allow-discrete;
+    transition-duration: var(--duracion-base);
+  }
+  .dialogo-animado { opacity: 0; scale: 0.97; }
+  .dialogo-animado::backdrop { opacity: 0; }
+  .dialogo-animado[open],
+  .dialogo-animado[open]::backdrop { transition-duration: var(--duracion-lenta); }
+}
+
+/* Panel desplegable que usa el atributo hidden (menú móvil): entra y sale con el mismo gesto. */
+.panel-desplegable {
+  transition-property: opacity, translate, display;
+  transition-behavior: allow-discrete;
+  transition-duration: var(--duracion-base);
+  transition-timing-function: var(--curva-salida);
+}
+.panel-desplegable[hidden] { opacity: 0; translate: 0 -4px; transition-duration: var(--duracion-rapida); }
+@starting-style {
+  .panel-desplegable:not([hidden]) { opacity: 0; translate: 0 -4px; }
+}
+
+/*
+ * View Transitions (React <ViewTransition>). Solo la navegación explícita (tipo "navegacion")
+ * funde el contenido: refrescos, filtros, orden y cargas tras el esqueleto son silenciosos.
+ * La raíz (barra lateral, cabecera) no se pinta ni bloquea clics durante la transición.
+ */
+::view-transition {
+  pointer-events: none;
+}
+::view-transition-old(root) {
+  display: none;
+}
+::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-group(.pagina) {
+  animation-duration: var(--duracion-pagina);
+  animation-timing-function: var(--curva-salida);
+}
+/* La vista vieja se va primero (hacia delante; "reverse" invertiría la curva) y no se mezclan. */
+::view-transition-old(.pagina) {
+  animation: var(--duracion-rapida) var(--curva-salida) both desvanecer;
+}
+::view-transition-new(.pagina) {
+  animation: var(--duracion-pagina) var(--curva-salida) both aparecer;
+}
+
+/* El resaltado de la navegación se desliza al nuevo ítem. Un clic no tiene impulso: sin rebote. */
+::view-transition-group(.indicador) {
+  animation-duration: var(--duracion-lenta);
+  animation-timing-function: var(--curva-salida);
+}
+
+/* Número de causa compartido: la versión nueva (nítida) crece hasta su tamaño; la vieja se va rápido. */
+::view-transition-group(.texto-compartido) {
+  animation-duration: var(--duracion-lenta);
+  animation-timing-function: var(--curva-salida);
+}
+::view-transition-old(.texto-compartido) {
+  animation: var(--duracion-rapida) var(--curva-salida) both desvanecer;
+}
+::view-transition-new(.texto-compartido) {
+  animation: none;
+}
+
+/*
+ * Despliegue al aparecer (excepción documentada: anima height). Un aviso que se inserta DESPUÉS de
+ * cargar la vista abre su espacio en vez de empujar el contenido de golpe. Nunca en listas.
+ */
+.despliegue {
+  overflow: clip;
+  overflow-clip-margin: 4px; /* no recorta el anillo de foco de lo que contiene */
+  interpolate-size: allow-keywords;
+  transition:
+    height var(--duracion-lenta) var(--curva-salida),
+    opacity var(--duracion-lenta) var(--curva-salida);
+}
+@starting-style {
+  .despliegue { height: 0; opacity: 0; }
+}
+
+/*
+ * Texto plegable ("Ver más"; excepción documentada: anima height). Sin calc-size: line-clamp a 3
+ * líneas y cambio inmediato. Con soporte: altura entre ~3,5 líneas (desvanecido inferior) y auto.
+ */
+.texto-plegable[data-plegado="true"] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+@supports (height: calc-size(auto, size)) {
+  .texto-plegable {
+    interpolate-size: allow-keywords;
+    overflow: hidden;
+    height: auto;
+    transition: height var(--duracion-lenta) var(--curva-salida);
+  }
+  .texto-plegable[data-plegado="true"] {
+    display: block;
+    -webkit-line-clamp: unset;
+    height: calc-size(auto, min(size, 3.5lh));
+    mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  }
+}
+
+/*
+ * Movimiento reducido: se conserva el fundido (opacidad) y se quita todo desplazamiento.
+ * Los elementos compartidos saltan a su sitio y nada queda oculto esperando un retraso.
+ */
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+  }
+
   *,
   *::before,
-  *::after {
+  *::after,
+  *::backdrop {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
+  }
+
+  .animate-latido {
+    animation: none !important;
+    opacity: 0;
+  }
+  /* La carga se sigue indicando, sin barrido. */
+  .animate-barrido {
+    animation: none !important;
+    width: 100%;
+    opacity: 0.6;
   }
 }

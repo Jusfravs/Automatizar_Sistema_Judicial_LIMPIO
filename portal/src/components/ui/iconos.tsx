@@ -124,6 +124,15 @@ export function IconoSiguiente(props: IconoProps) {
   )
 }
 
+export function IconoBuscar(props: IconoProps) {
+  return (
+    <Trazo {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </Trazo>
+  )
+}
+
 /** Indicador de carga. Con reduced-motion globals.css detiene el giro y queda estático. */
 export function Spinner({ className = 'size-4 animate-spin', ...props }: IconoProps) {
   return (

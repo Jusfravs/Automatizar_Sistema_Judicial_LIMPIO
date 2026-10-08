@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { cx } from '@/lib/cx'
+import { NAVEGACION } from '@/lib/transiciones'
 import { FOCO } from './estilos'
 
 export type Miga = { etiqueta: string; href?: string }
@@ -11,7 +12,7 @@ export type PageHeaderProps = {
   acciones?: ReactNode
   /** Migas de pan; la última es la página actual y no lleva enlace. */
   migas?: readonly Miga[]
-  /** Para títulos que son un número de causa o un identificador (system.md 2.3: van en mono, no en serif). */
+  /** Para títulos que son un número de causa o un identificador (docs/system.md 2.3: van en mono, no en serif). */
   tituloMono?: boolean
   className?: string
 }
@@ -30,6 +31,7 @@ export function PageHeader({ titulo, descripcion, acciones, migas, tituloMono = 
                   {miga.href && !ultima ? (
                     <Link
                       href={miga.href}
+                      transitionTypes={NAVEGACION}
                       className={cx('rounded-control underline-offset-4 transition-colors hover:text-fg hover:underline', FOCO)}
                     >
                       {miga.etiqueta}
@@ -49,7 +51,7 @@ export function PageHeader({ titulo, descripcion, acciones, migas, tituloMono = 
         <div className="min-w-0 space-y-1">
           <h1
             className={cx(
-              'text-2xl font-semibold text-fg text-balance',
+              'text-titulo font-semibold text-fg text-balance [overflow-wrap:anywhere]',
               tituloMono ? 'font-mono tracking-tight' : 'font-serif',
             )}
           >
