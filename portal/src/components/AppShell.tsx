@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ViewTransition, type ReactNode } from 'react'
 import { MenuMovil, NavPrincipal } from '@/components/AppShellCliente'
+import { BotonBuscarCausa, BuscadorCausas } from '@/components/BuscadorCausas'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { FOCO } from '@/components/ui/estilos'
@@ -70,11 +71,15 @@ export function AppShell({ nombre, rol, pendientes, children }: AppShellProps) {
         <div className="flex h-16 shrink-0 items-center px-5">
           <Marca />
         </div>
-        <NavPrincipal pendientes={pendientes} className="flex-1 overflow-y-auto px-3 py-2" />
+        <div className="shrink-0 px-3 pb-3">
+          <BotonBuscarCausa variante="barra" />
+        </div>
+        <NavPrincipal pendientes={pendientes} resaltadoCompartido className="flex-1 overflow-y-auto px-3 py-2" />
         <div className="shrink-0 border-t border-on-nav/15 p-4">{pie}</div>
       </aside>
 
-      <MenuMovil marca={<Marca />} pie={pie} pendientes={pendientes} />
+      <MenuMovil marca={<Marca />} pie={pie} pendientes={pendientes} acciones={<BotonBuscarCausa variante="icono" />} />
+      <BuscadorCausas />
 
       <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-7xl px-4 py-6 outline-none sm:px-6 lg:px-8 lg:py-8">
         {/*

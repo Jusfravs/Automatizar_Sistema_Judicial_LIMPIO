@@ -14,6 +14,8 @@ export type DialogProps = {
   children?: ReactNode
   /** Botones del pie, alineados a la derecha. La acción principal va al final. */
   acciones?: ReactNode
+  /** "amplio" para contenido con listas (p. ej. el buscador). */
+  ancho?: 'normal' | 'amplio'
   className?: string
 }
 
@@ -22,7 +24,16 @@ export type DialogProps = {
  * Al cerrarse devuelve el foco al elemento que lo abrió. Entrada y salida (más corta) se animan con
  * .dialogo-animado (globals.css: @starting-style + allow-discrete); reduced-motion las anula.
  */
-export function Dialog({ abierto, alCerrar, titulo, descripcion, children, acciones, className }: DialogProps) {
+export function Dialog({
+  abierto,
+  alCerrar,
+  titulo,
+  descripcion,
+  children,
+  acciones,
+  ancho = 'normal',
+  className,
+}: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
   const disparador = useRef<HTMLElement | null>(null)
   const cierrePorProp = useRef(false)
@@ -72,7 +83,8 @@ export function Dialog({ abierto, alCerrar, titulo, descripcion, children, accio
         if (e.target === e.currentTarget) alCerrarRef.current()
       }}
       className={cx(
-        'm-auto w-full max-w-lg bg-transparent p-4 text-fg backdrop:bg-velo',
+        'm-auto w-full bg-transparent p-4 text-fg backdrop:bg-velo',
+        ancho === 'amplio' ? 'max-w-xl' : 'max-w-lg',
         'dialogo-animado',
         className,
       )}
