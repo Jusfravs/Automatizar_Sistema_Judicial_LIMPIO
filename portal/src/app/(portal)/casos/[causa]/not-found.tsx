@@ -6,6 +6,7 @@ export default function CausaNoEncontrada() {
       titulo="No encontramos esta causa"
       descripcion="Revisa el número de causa o búscala desde el listado."
       volver={{ href: '/casos', texto: 'Volver a casos' }}
+      pista="También puedes buscarla desde cualquier pantalla con Ctrl + K."
     />
   )
 }
