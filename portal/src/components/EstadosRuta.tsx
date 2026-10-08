@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { ButtonLink } from '@/components/ui/ButtonLink'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { TituloCausaCarga } from '@/components/TituloCausaCarga'
 
 /** Esqueleto de página para loading.tsx: cabecera, una fila de tarjetas y un bloque de contenido. */
 export function CargandoPagina({ tarjetas = 0 }: { tarjetas?: number }) {
@@ -153,7 +154,17 @@ export function CargandoDetalleLote() {
 export function CargandoDetalleCaso() {
   return (
     <MarcoCarga mensaje="Cargando el expediente y sus actuaciones…">
-      <CabeceraCarga migas accion />
+      {/* El número de causa sale de la URL: se ve de inmediato y llega volando desde la lista. */}
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-44 max-w-full" />
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-2">
+            <TituloCausaCarga />
+            <Skeleton className="h-4 w-56 max-w-full" />
+          </div>
+          <Skeleton className="h-6 w-24 rounded-full" />
+        </div>
+      </div>
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Card>

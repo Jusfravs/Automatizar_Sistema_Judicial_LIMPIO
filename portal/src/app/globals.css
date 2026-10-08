@@ -463,6 +463,31 @@ body {
   animation: var(--duracion-pagina) var(--curva-salida) both aparecer;
 }
 
+/*
+ * Texto plegable ("Ver más"). Sin soporte de calc-size: line-clamp a 3 líneas, cambio inmediato.
+ * Con soporte: la altura se interpola entre ~3,5 líneas (con desvanecido inferior) y auto.
+ */
+.texto-plegable[data-plegado="true"] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+@supports (height: calc-size(auto, size)) {
+  .texto-plegable {
+    interpolate-size: allow-keywords;
+    overflow: hidden;
+    height: auto;
+    transition: height var(--duracion-lenta) var(--curva-salida);
+  }
+  .texto-plegable[data-plegado="true"] {
+    display: block;
+    -webkit-line-clamp: unset;
+    height: calc-size(auto, min(size, 3.5lh));
+    mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  }
+}
+
 /* El indicador de la navegación se desliza al nuevo ítem con el muelle. */
 ::view-transition-group(.indicador) {
   animation-duration: var(--duracion-movimiento);

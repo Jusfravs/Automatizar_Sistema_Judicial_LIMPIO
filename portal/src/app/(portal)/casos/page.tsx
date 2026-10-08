@@ -1,22 +1,20 @@
 import Link from 'next/link'
+import { ViewTransition } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import {
   Alert,
-  Button,
   ButtonLink,
-  Checkbox,
   DataTable,
   EmptyState,
   EstadoBadge,
-  Field,
-  Input,
   PageHeader,
   Pagination,
-  Select,
   type Columna,
 } from '@/components/ui'
 import { IconoCerrar } from '@/components/ui/iconos'
 import { FOCO } from '@/components/ui/estilos'
+import { NumeroCausaCompartido } from '@/components/NumeroCausa'
+import { cx } from '@/lib/cx'
 import { formatFecha, formatFechaProcesal } from '@/lib/fechas'
 import {
   CASOS_POR_PAGINA,
@@ -28,8 +26,22 @@ import {
   primerValor,
   type ExpedienteLista,
 } from '@/lib/casos'
+import { FiltrosCasos } from './FiltrosCasos'
 
 type SearchParams = Record<string, string | string[] | undefined>
+
+/** Columnas por las que se puede ordenar y su dirección inicial al elegirlas. */
+const ORDENABLES = {
+  causa: { columna: 'numero_causa', inicial: 'asc' },
+  estado: { columna: 'estado', inicial: 'asc' },
+  fase: { columna: 'fase_actual', inicial: 'asc' },
+  inicio: { columna: 'fecha_inicio_fase_actual', inicial: 'desc' },
+  actualizado: { columna: 'actualizado_en', inicial: 'desc' },
+} as const
+type ClaveOrden = keyof typeof ORDENABLES
+type Direccion = 'asc' | 'desc'
+type Orden = { clave: ClaveOrden; dir: Direccion }
+const ORDEN_DEFECTO: Orden = { clave: 'actualizado', dir: 'desc' }
 
 type Filtros = {
   q: string
@@ -37,7 +49,19 @@ type Filtros = {
   fase: string
   ciudad: string
   pendientes: boolean
+  orden: Orden
   page: number
+}
+
+function leerOrden(valor: string): Orden {
+  const [clave, dir] = valor.split('-')
+  if (clave in ORDENABLES && (dir === 'asc' || dir === 'desc')) return { clave: clave as ClaveOrden, dir }
+  return ORDEN_DEFECTO
+}
+
+/** "" para el orden por defecto: la URL limpia significa "lo de siempre". */
+function textoOrden(o: Orden): string {
+  return o.clave === ORDEN_DEFECTO.clave && o.dir === ORDEN_DEFECTO.dir ? '' : `${o.clave}-${o.dir}`
 }
 
 function leerFiltros(sp: SearchParams): Filtros {
@@ -48,6 +72,7 @@ function leerFiltros(sp: SearchParams): Filtros {
     fase: primerValor(sp.fase).slice(0, 80),
     ciudad: primerValor(sp.ciudad).slice(0, 60),
     pendientes: primerValor(sp.pendientes) === '1',
+    orden: leerOrden(primerValor(sp.orden)),
     page: leerPagina(primerValor(sp.page)),
   }
 }
@@ -59,8 +84,11 @@ function urlPagina(f: Filtros, page: number): string {
   if (f.fase) sp.set('fase', f.fase)
   if (f.ciudad) sp.set('ciudad', f.ciudad)
   if (f.pendientes) sp.set('pendientes', '1')
-  sp.set('page', String(page))
-  return `/casos?${sp.toString()}`
+  const orden = textoOrden(f.orden)
+  if (orden) sp.set('orden', orden)
+  if (page > 1) sp.set('page', String(page))
+  const consulta = sp.toString()
+  return consulta ? `/casos?${consulta}` : '/casos'
 }
 
 type Resultado = { filas: ExpedienteLista[]; total: number; error: boolean }
@@ -80,10 +108,13 @@ async function buscarCasos(f: Filtros, fasesValidas: string[]): Promise<Resultad
     if (causasPendientes.length === 0) return { filas: [], total: 0, error: false }
   }
 
+  const { columna } = ORDENABLES[f.orden.clave]
   let consulta = supabase
     .from('expedientes')
     .select(COLUMNAS_EXPEDIENTE_LISTA, { count: 'exact' })
-    .order('actualizado_en', { ascending: false })
+    .order(columna, { ascending: f.orden.dir === 'asc', nullsFirst: false })
+    // Desempate estable: la paginación no repite ni salta causas con el mismo valor.
+    .order('numero_causa', { ascending: true })
     .range(desde, desde + CASOS_POR_PAGINA - 1)
 
   if (f.q) consulta = consulta.ilike('numero_causa', `%${escaparIlike(f.q)}%`)
@@ -102,7 +133,7 @@ async function buscarCasos(f: Filtros, fasesValidas: string[]): Promise<Resultad
   return { filas: (data ?? []) as ExpedienteLista[], total: count ?? 0, error: false }
 }
 
-function urlSin(f: Filtros, quitar: keyof Omit<Filtros, 'page'>): string {
+function urlSin(f: Filtros, quitar: 'q' | 'estado' | 'fase' | 'ciudad' | 'pendientes'): string {
   const sinFiltro: Filtros = { ...f, [quitar]: quitar === 'pendientes' ? false : '' }
   return urlPagina(sinFiltro, 1)
 }
@@ -111,6 +142,7 @@ function Chip({ texto, href }: { texto: string; href: string }) {
   return (
     <Link
       href={href}
+      scroll={false}
       className={`inline-flex items-center gap-1.5 rounded-full border border-subtle bg-surface px-3 py-1 text-sm text-fg transition-colors hover:bg-surface-2 ${FOCO}`}
     >
       {texto}
@@ -120,49 +152,98 @@ function Chip({ texto, href }: { texto: string; href: string }) {
   )
 }
 
-const COLUMNAS: Columna<ExpedienteLista>[] = [
-  {
-    clave: 'causa',
-    encabezado: 'Número de causa',
-    principal: true,
-    celda: (c) => (
-      <Link
-        href={`/casos/${encodeURIComponent(c.numero_causa)}`}
-        className={`whitespace-nowrap rounded-sm font-mono text-sm font-medium text-fg underline-offset-2 transition-colors hover:text-primary hover:underline ${FOCO}`}
+/** Cabecera ordenable: enlace que alterna la dirección; la flecha y aria-sort dicen el estado. */
+function EncabezadoOrden({ etiqueta, clave, f }: { etiqueta: string; clave: ClaveOrden; f: Filtros }) {
+  const activa = f.orden.clave === clave
+  const siguiente: Orden = activa
+    ? { clave, dir: f.orden.dir === 'asc' ? 'desc' : 'asc' }
+    : { clave, dir: ORDENABLES[clave].inicial }
+  return (
+    <Link
+      href={urlPagina({ ...f, orden: siguiente }, 1)}
+      scroll={false}
+      className={cx(
+        'group/orden -mx-1 inline-flex items-center gap-1 rounded-sm px-1 uppercase transition-colors hover:text-fg',
+        activa && 'text-fg',
+        FOCO,
+      )}
+    >
+      {etiqueta}
+      <svg
+        viewBox="0 0 12 12"
+        aria-hidden="true"
+        className={cx(
+          'size-3 transition-[opacity,rotate] duration-(--duracion-base) ease-salida',
+          activa ? 'opacity-100' : 'opacity-0 group-hover/orden:opacity-60',
+          activa && f.orden.dir === 'asc' && 'rotate-180',
+        )}
       >
-        {c.numero_causa}
-      </Link>
-    ),
-  },
-  {
-    clave: 'estado',
-    encabezado: 'Estado',
-    celda: (c) => (c.estado ? <EstadoBadge tipo="caso" estado={c.estado} /> : <span className="text-muted">—</span>),
-  },
-  { clave: 'ciudad', encabezado: 'Ciudad', celda: (c) => <span className="text-sm">{c.ciudad ?? '—'}</span> },
-  {
-    clave: 'fase',
-    encabezado: 'Etapa y fase actual',
-    celda: (c) => (
-      <div className="min-w-0 text-sm">
-        <p className="text-fg">{c.fase_actual ?? '—'}</p>
-        {c.etapa_actual ? <p className="text-xs text-muted">{c.etapa_actual}</p> : null}
-      </div>
-    ),
-  },
-  {
-    clave: 'inicio',
-    encabezado: 'Inicio fase actual',
-    ocultarEnMovil: true,
-    celda: (c) => <span className="text-sm tabular-nums text-muted">{formatFechaProcesal(c.fecha_inicio_fase_actual)}</span>,
-  },
-  {
-    clave: 'actualizado',
-    encabezado: 'Actualizado',
-    ocultarEnMovil: true,
-    celda: (c) => <span className="text-sm text-muted">{formatFecha(c.actualizado_en)}</span>,
-  },
-]
+        <path d="M6 9.5 2.5 5h7z" fill="currentColor" />
+      </svg>
+      <span className="sr-only">
+        {activa ? `, orden ${f.orden.dir === 'asc' ? 'ascendente' : 'descendente'}; cambiar` : ', ordenar'}
+      </span>
+    </Link>
+  )
+}
+
+function columnas(f: Filtros): Columna<ExpedienteLista>[] {
+  const orden = (clave: ClaveOrden) =>
+    f.orden.clave === clave ? (f.orden.dir === 'asc' ? 'ascending' : 'descending') : undefined
+  return [
+    {
+      clave: 'causa',
+      encabezado: <EncabezadoOrden etiqueta="Número de causa" clave="causa" f={f} />,
+      orden: orden('causa'),
+      principal: true,
+      celda: (c, vista) => (
+        <Link
+          href={`/casos/${encodeURIComponent(c.numero_causa)}`}
+          className={`whitespace-nowrap rounded-sm font-mono text-sm font-medium text-fg underline-offset-2 transition-colors hover:text-primary hover:underline ${FOCO}`}
+        >
+          {/* Solo en la tabla: el nombre de la transición debe ser único en la página. */}
+          {vista === 'tabla' ? (
+            <NumeroCausaCompartido numero={c.numero_causa}>{c.numero_causa}</NumeroCausaCompartido>
+          ) : (
+            c.numero_causa
+          )}
+        </Link>
+      ),
+    },
+    {
+      clave: 'estado',
+      encabezado: <EncabezadoOrden etiqueta="Estado" clave="estado" f={f} />,
+      orden: orden('estado'),
+      celda: (c) => (c.estado ? <EstadoBadge tipo="caso" estado={c.estado} /> : <span className="text-muted">—</span>),
+    },
+    { clave: 'ciudad', encabezado: 'Ciudad', celda: (c) => <span className="text-sm">{c.ciudad ?? '—'}</span> },
+    {
+      clave: 'fase',
+      encabezado: <EncabezadoOrden etiqueta="Etapa y fase actual" clave="fase" f={f} />,
+      orden: orden('fase'),
+      celda: (c) => (
+        <div className="min-w-0 text-sm">
+          <p className="text-fg">{c.fase_actual ?? '—'}</p>
+          {c.etapa_actual ? <p className="text-xs text-muted">{c.etapa_actual}</p> : null}
+        </div>
+      ),
+    },
+    {
+      clave: 'inicio',
+      encabezado: <EncabezadoOrden etiqueta="Inicio fase actual" clave="inicio" f={f} />,
+      orden: orden('inicio'),
+      ocultarEnMovil: true,
+      celda: (c) => <span className="text-sm tabular-nums text-muted">{formatFechaProcesal(c.fecha_inicio_fase_actual)}</span>,
+    },
+    {
+      clave: 'actualizado',
+      encabezado: <EncabezadoOrden etiqueta="Actualizado" clave="actualizado" f={f} />,
+      orden: orden('actualizado'),
+      ocultarEnMovil: true,
+      celda: (c) => <span className="text-sm tabular-nums text-muted">{formatFecha(c.actualizado_en)}</span>,
+    },
+  ]
+}
 
 export const metadata = { title: 'Casos' }
 
@@ -179,106 +260,81 @@ export default async function CasosPage({ searchParams }: { searchParams: Promis
   const { filas, total, error } = await buscarCasos(f, nombresFase)
   const totalPaginas = Math.max(1, Math.ceil(total / CASOS_POR_PAGINA))
 
-  const chips: { texto: string; href: string }[] = []
-  if (f.q) chips.push({ texto: `Causa: ${f.q}`, href: urlSin(f, 'q') })
-  if (f.estado) chips.push({ texto: `Estado: ${ESTADO_CASO_ETIQUETAS[f.estado] ?? f.estado}`, href: urlSin(f, 'estado') })
-  if (f.fase) chips.push({ texto: `Fase: ${f.fase}`, href: urlSin(f, 'fase') })
-  if (f.ciudad) chips.push({ texto: `Ciudad: ${f.ciudad}`, href: urlSin(f, 'ciudad') })
-  if (f.pendientes) chips.push({ texto: 'Con revisión pendiente', href: urlSin(f, 'pendientes') })
+  // La clave es el tipo de filtro: al escribir, el chip cambia de texto sin salir y volver a entrar.
+  const chips: { clave: string; texto: string; href: string }[] = []
+  if (f.q) chips.push({ clave: 'q', texto: `Causa: ${f.q}`, href: urlSin(f, 'q') })
+  if (f.estado) chips.push({ clave: 'estado', texto: `Estado: ${ESTADO_CASO_ETIQUETAS[f.estado] ?? f.estado}`, href: urlSin(f, 'estado') })
+  if (f.fase) chips.push({ clave: 'fase', texto: `Fase: ${f.fase}`, href: urlSin(f, 'fase') })
+  if (f.ciudad) chips.push({ clave: 'ciudad', texto: `Ciudad: ${f.ciudad}`, href: urlSin(f, 'ciudad') })
+  if (f.pendientes) chips.push({ clave: 'pendientes', texto: 'Con revisión pendiente', href: urlSin(f, 'pendientes') })
 
   return (
     <div className="space-y-6">
       <PageHeader titulo="Casos" descripcion="Causas consultadas y su clasificación procesal" />
 
-      {/* El key reinicia los valores por defecto al limpiar o cambiar de filtros. */}
-      <form
-        key={`${f.q}|${f.estado}|${f.fase}|${f.ciudad}|${f.pendientes}`}
-        method="get"
-        className="space-y-4 rounded-tarjeta bg-surface p-4 shadow-tarjeta"
+      <FiltrosCasos
+        iniciales={{
+          q: f.q,
+          estado: f.estado,
+          fase: f.fase,
+          ciudad: f.ciudad,
+          pendientes: f.pendientes,
+          orden: textoOrden(f.orden),
+        }}
+        fases={nombresFase}
+        estados={ESTADOS_CASO.map((e) => ({ valor: e, etiqueta: ESTADO_CASO_ETIQUETAS[e] ?? e }))}
+        hayFiltros={chips.length > 0}
       >
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Número de causa" htmlFor="q">
-            <Input id="q" name="q" defaultValue={f.q} maxLength={60} placeholder="Ej.: 17230-2019" className="font-mono" />
-          </Field>
-          <Field label="Estado" htmlFor="estado">
-            <Select id="estado" name="estado" defaultValue={f.estado}>
-              <option value="">Todos</option>
-              {ESTADOS_CASO.map((e) => (
-                <option key={e} value={e}>
-                  {ESTADO_CASO_ETIQUETAS[e] ?? e}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Fase actual" htmlFor="fase">
-            <Select id="fase" name="fase" defaultValue={f.fase}>
-              <option value="">Todas</option>
-              {nombresFase.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Ciudad" htmlFor="ciudad">
-            <Input id="ciudad" name="ciudad" defaultValue={f.ciudad} maxLength={60} placeholder="Ej.: Quito" />
-          </Field>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Checkbox id="pendientes" name="pendientes" value="1" defaultChecked={f.pendientes} label="Solo con revisión pendiente" />
-          <div className="flex gap-2 sm:ml-auto">
-            <Button type="submit">Filtrar</Button>
-            <ButtonLink href="/casos" variante="secundario">
-              Limpiar
-            </ButtonLink>
-          </div>
-        </div>
-      </form>
-
-      {chips.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-muted">Filtros activos:</span>
-          {chips.map((c) => (
-            <Chip key={c.texto} {...c} />
-          ))}
-        </div>
-      )}
-
-      {error ? (
-        <Alert tono="peligro" rol="alert">
-          No se pudieron cargar las causas. Intenta de nuevo en unos segundos.
-        </Alert>
-      ) : (
         <div className="space-y-4">
-          <p className="text-sm text-muted">
-            <span className="font-semibold tabular-nums text-fg">{total}</span> {total === 1 ? 'causa' : 'causas'}
-          </p>
-          <DataTable
-            etiqueta="Causas"
-            columnas={COLUMNAS}
-            filas={filas}
-            claveFila={(c) => c.numero_causa}
-            vacio={
-              <EmptyState
-                titulo="No hay causas con estos filtros"
-                accion={
-                  chips.length > 0 ? (
-                    <ButtonLink href="/casos" variante="secundario">
-                      Quitar filtros
-                    </ButtonLink>
-                  ) : undefined
+          {/* Contenedor siempre montado: así cada chip puede entrar y salir con su propia transición. */}
+          <div hidden={chips.length === 0} className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted">Filtros activos:</span>
+            {chips.map((c) => (
+              <ViewTransition key={c.clave}>
+                <Chip texto={c.texto} href={c.href} />
+              </ViewTransition>
+            ))}
+          </div>
+
+          {error ? (
+            <Alert tono="peligro" rol="alert">
+              No se pudieron cargar las causas. Intenta de nuevo en unos segundos.
+            </Alert>
+          ) : (
+            <>
+              <p className="text-sm text-muted" aria-live="polite">
+                <span className="font-semibold tabular-nums text-fg">{total.toLocaleString('es-EC')}</span>{' '}
+                {total === 1 ? 'causa' : 'causas'}
+              </p>
+              <DataTable
+                etiqueta="Causas"
+                columnas={columnas(f)}
+                filas={filas}
+                claveFila={(c) => c.numero_causa}
+                vacio={
+                  <EmptyState
+                    titulo="No hay causas con estos filtros"
+                    descripcion="Prueba con otro número, quita un filtro o revisa la ortografía de la ciudad."
+                    accion={
+                      chips.length > 0 ? (
+                        <ButtonLink href="/casos" variante="secundario">
+                          Quitar filtros
+                        </ButtonLink>
+                      ) : undefined
+                    }
+                  />
                 }
               />
-            }
-          />
-          <Pagination
-            pagina={f.page}
-            totalPaginas={totalPaginas}
-            hrefPagina={(n) => urlPagina(f, n)}
-            etiqueta="Paginación de casos"
-          />
+              <Pagination
+                pagina={f.page}
+                totalPaginas={totalPaginas}
+                hrefPagina={(n) => urlPagina(f, n)}
+                etiqueta="Paginación de casos"
+              />
+            </>
+          )}
         </div>
-      )}
+      </FiltrosCasos>
     </div>
   )
 }

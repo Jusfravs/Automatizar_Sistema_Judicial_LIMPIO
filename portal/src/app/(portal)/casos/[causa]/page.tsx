@@ -28,6 +28,7 @@ import {
   type ParEtapaFase,
   type RevisionDetalle,
 } from '@/lib/casos'
+import { NumeroCausaCompartido } from '@/components/NumeroCausa'
 import DetalleActuacion from './DetalleActuacion'
 import RevisionForm from './RevisionForm'
 
@@ -131,7 +132,7 @@ export default async function CasoPage({ params, searchParams }: Props) {
   return (
     <div className="space-y-6">
       <PageHeader
-        titulo={expediente.numero_causa}
+        titulo={<NumeroCausaCompartido numero={expediente.numero_causa}>{expediente.numero_causa}</NumeroCausaCompartido>}
         tituloMono
         descripcion={`Actualizado: ${formatFecha(expediente.actualizado_en)}`}
         migas={[{ etiqueta: 'Casos', href: '/casos' }, { etiqueta: expediente.numero_causa }]}
@@ -195,7 +196,7 @@ export default async function CasoPage({ params, searchParams }: Props) {
               ) : actuaciones.length === 0 ? (
                 <p className="text-sm text-muted">Esta causa no tiene actuaciones en esta página.</p>
               ) : (
-                <ol className="space-y-0">
+                <ol className="entrada-escalonada space-y-0">
                   {actuaciones.map((a) => {
                     const esEvidencia = evidencias.has(a.actuacion_id)
                     return (
@@ -216,7 +217,7 @@ export default async function CasoPage({ params, searchParams }: Props) {
                         >
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                             <span className="text-sm font-semibold tabular-nums text-fg">{formatFechaProcesal(a.fecha)}</span>
-                            {a.carpeta ? <span className="text-xs text-muted">{a.carpeta}</span> : null}
+                            {a.carpeta ? <span className="min-w-0 text-xs text-muted [overflow-wrap:anywhere]">{a.carpeta}</span> : null}
                             {esEvidencia && <Badge tono="info">Evidencia IA</Badge>}
                           </div>
                           <DetalleActuacion texto={textoPlano(a.titulo)} destacado />
