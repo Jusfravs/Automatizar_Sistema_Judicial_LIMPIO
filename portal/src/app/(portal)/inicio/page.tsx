@@ -138,7 +138,8 @@ async function lotesEnCurso(supabase: Supabase, ahora: number) {
   const { data, error } = await supabase
     .from('solicitudes_lote')
     .select('id, archivo_nombre, estado, ejecucion_id, creado_en')
-    .or(`estado.in.(${ESTADOS_ACTIVOS.join(',')}),finalizado_en.gte."${recientes}"`)
+    // Activos + completados recientes. Fallidos, rechazados y cancelados no son "trabajo en curso".
+    .or(`estado.in.(${ESTADOS_ACTIVOS.join(',')}),and(estado.eq.COMPLETADA,finalizado_en.gte."${recientes}")`)
     .order('creado_en', { ascending: false })
     .limit(5)
 

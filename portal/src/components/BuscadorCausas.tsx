@@ -71,7 +71,8 @@ export function BotonBuscarCausa({ variante }: { variante: 'barra' | 'icono' }) 
   )
 }
 
-type Estado = 'inactivo' | 'buscando' | 'listo' | 'error'
+/** Respuesta atada al término que la produjo: nunca se muestra ni se elige una respuesta obsoleta. */
+type Respuesta = { termino: string; filas: Resultado[]; error: boolean }
 
 /**
  * Búsqueda global de causas (Ctrl/⌘+K; sin atajos de una sola tecla, WCAG 2.1.4). Busca por número
@@ -83,8 +84,7 @@ export function BuscadorCausas() {
   const supabase = useMemo(() => createClient(), [])
   const [abierto, setAbierto] = useState(false)
   const [texto, setTexto] = useState('')
-  const [resultados, setResultados] = useState<Resultado[]>([])
-  const [estado, setEstado] = useState<Estado>('inactivo')
+  const [respuesta, setRespuesta] = useState<Respuesta | null>(null)
   const [activo, setActivo] = useState(0)
   const campo = useRef<HTMLInputElement>(null)
   const consulta = useRef(0)
@@ -125,10 +125,10 @@ export function BuscadorCausas() {
   }, [abierto])
 
   useEffect(() => {
-    if (!abierto || !suficiente) return
+    // Cualquier cambio (término nuevo, borrar, cerrar) invalida la petición en curso.
     const id = ++consulta.current
+    if (!abierto || !suficiente) return
     const espera = setTimeout(async () => {
-      setEstado('buscando')
       const patron = `%${termino}%`
       const { data, error } = await supabase
         .from('expedientes')
@@ -139,12 +139,11 @@ export function BuscadorCausas() {
       if (id !== consulta.current) return // llegó tarde: ya hay una búsqueda más nueva
       if (error) {
         console.error('No se pudo buscar causas:', error.message)
-        setEstado('error')
+        setRespuesta({ termino, filas: [], error: true })
         return
       }
-      setResultados(data ?? [])
+      setRespuesta({ termino, filas: data ?? [], error: false })
       setActivo(0)
-      setEstado('listo')
     }, ESPERA_MS)
     return () => clearTimeout(espera)
   }, [abierto, suficiente, termino, supabase])
@@ -152,38 +151,42 @@ export function BuscadorCausas() {
   function abrirCausa(numero: string) {
     setAbierto(false)
     setTexto('')
-    setResultados([])
-    setEstado('inactivo')
+    setRespuesta(null)
     router.push(`/casos/${encodeURIComponent(numero)}`, { transitionTypes: NAVEGACION })
   }
 
+  // Solo cuentan los resultados del término que se ve escrito (revisión de Codex).
+  const vigente = suficiente && respuesta !== null && respuesta.termino === termino
+  const buscando = suficiente && !vigente
+  const fallo = vigente && respuesta.error
+  const visibles = vigente && !respuesta.error ? respuesta.filas : []
+
   function alTeclearCampo(e: KeyboardEvent<HTMLInputElement>) {
-    if (!resultados.length || !suficiente) return
+    if (!visibles.length) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setActivo((i) => (i + 1) % resultados.length)
+      setActivo((i) => (i + 1) % visibles.length)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setActivo((i) => (i - 1 + resultados.length) % resultados.length)
+      setActivo((i) => (i - 1 + visibles.length) % visibles.length)
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      const elegido = resultados[activo]
+      const elegido = visibles[activo]
       if (elegido) abrirCausa(elegido.numero_causa)
     }
   }
 
-  const visibles = suficiente ? resultados : []
   const opcionId = (i: number) => `${listaId}-op-${i}`
-  const mostrarLista = suficiente && estado !== 'error' && visibles.length > 0
+  const mostrarLista = visibles.length > 0
 
   let mensaje: string
   if (!suficiente) mensaje = 'Escribe al menos 2 caracteres: número de causa, actor o demandado.'
-  else if (estado === 'error') mensaje = 'No se pudo completar la búsqueda. Revisa tu conexión e inténtalo de nuevo.'
-  else if (estado === 'listo' && visibles.length === 0) mensaje = `No hay causas que coincidan con «${termino}».`
-  else if (estado === 'listo' && visibles.length >= MAXIMO_RESULTADOS)
+  else if (buscando) mensaje = 'Buscando…'
+  else if (fallo) mensaje = 'No se pudo completar la búsqueda. Revisa tu conexión e inténtalo de nuevo.'
+  else if (visibles.length === 0) mensaje = `No hay causas que coincidan con «${termino}».`
+  else if (visibles.length >= MAXIMO_RESULTADOS)
     mensaje = `Se muestran las ${MAXIMO_RESULTADOS} más recientes. Escribe más para afinar la búsqueda.`
-  else if (estado === 'listo') mensaje = visibles.length === 1 ? '1 causa encontrada.' : `${visibles.length} causas encontradas.`
-  else mensaje = 'Buscando…'
+  else mensaje = visibles.length === 1 ? '1 causa encontrada.' : `${visibles.length} causas encontradas.`
 
   return (
     <Dialog abierto={abierto} alCerrar={() => setAbierto(false)} titulo="Buscar causa" ancho="amplio" animado={false} className="mt-[12vh]">
@@ -210,7 +213,7 @@ export function BuscadorCausas() {
             placeholder="Número de causa, actor o demandado"
             className={cx(CONTROL, 'h-11 pl-9 pr-9 text-base')}
           />
-          {estado === 'buscando' && suficiente ? (
+          {buscando ? (
             <Spinner className="absolute right-9 top-[calc(50%-6px)] size-4 -translate-y-1/2 animate-spin text-muted" />
           ) : null}
         </div>
