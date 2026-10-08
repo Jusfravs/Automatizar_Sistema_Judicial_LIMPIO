@@ -14,6 +14,7 @@ import type { Database } from '@/lib/database.types'
 import { formatFecha } from '@/lib/fechas'
 import { primerValor } from '@/lib/casos'
 import { cx } from '@/lib/cx'
+import { FOCO } from '@/components/ui/estilos'
 import {
   calcularAvance,
   COLUMNAS_ESTADO_EJECUCION,
@@ -72,7 +73,8 @@ function FiltroEstado({ href, activo, children }: { href: string; activo: boolea
       href={href}
       aria-current={activo ? 'page' : undefined}
       className={cx(
-        'rounded-full border px-3 py-1 text-sm font-medium',
+        'rounded-full border px-3 py-1 text-sm font-medium transition-colors',
+        FOCO,
         activo ? 'border-primary bg-primary text-on-primary' : 'border-subtle bg-surface text-muted hover:text-fg',
       )}
     >
@@ -102,7 +104,7 @@ export default async function LotesPage({
       principal: true,
       celda: (s) => (
         <div className="min-w-0">
-          <Link href={`/lotes/${s.id}`} className="font-medium text-fg hover:text-primary hover:underline">
+          <Link href={`/lotes/${s.id}`} className={cx('rounded-sm font-medium text-fg underline-offset-2 transition-colors hover:text-primary hover:underline', FOCO)}>
             {s.archivo_nombre}
           </Link>
           <p className="text-xs text-muted">

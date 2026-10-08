@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatFecha } from '@/lib/fechas'
 import { Alert } from '@/components/ui/Alert'
@@ -49,9 +49,12 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
   const [descargando, setDescargando] = useState(false)
   const [downloadError, setDownloadError] = useState('')
   const [refreshError, setRefreshError] = useState(false)
+  const [actualizando, setActualizando] = useState(false)
+  const [ultimaConsulta, setUltimaConsulta] = useState<Date | null>(null)
   const [confirmando, setConfirmando] = useState(false)
+  const refrescarAhora = useRef<(() => void) | null>(null)
 
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const esActivo = ESTADOS_ACTIVOS.includes(actual.estado)
   const avance = calcularAvance(estado)
 
@@ -59,6 +62,8 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
     if (!esActivo) return
     let cancelled = false
     let temporizador: ReturnType<typeof setTimeout>
+    let enCurso = false
+    let refrescoPendiente = false
 
     async function refrescar(): Promise<boolean> {
       const { data: sol, error: solError } = await supabase
@@ -69,7 +74,9 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
       if (cancelled) return true
       if (solError || !sol) return false
       const nueva = sol as SolicitudDetalle
-      setActual(nueva)
+
+      let siguienteEstado: EstadoEjecucion | null = null
+      let siguienteCola: ColaError[] | null = null
 
       if (nueva.perfil) {
         const { data: est, error: estError } = await supabase
@@ -80,8 +87,11 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
           .limit(1)
           .maybeSingle()
         if (cancelled) return true
-        if (estError) return false
-        if (est) setEstado(est as EstadoEjecucion)
+        if (estError) {
+          setActual(nueva)
+          return false
+        }
+        if (est) siguienteEstado = est as EstadoEjecucion
       }
 
       if (nueva.ejecucion_id) {
@@ -93,23 +103,65 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
           .order('actualizado_en', { ascending: false })
           .limit(200)
         if (cancelled) return true
-        if (colaError) return false
-        setCola((filas as ColaError[] | null) ?? [])
+        if (colaError) {
+          if (siguienteEstado) setEstado(siguienteEstado)
+          setActual(nueva)
+          return false
+        }
+        siguienteCola = (filas as ColaError[] | null) ?? []
       }
+      if (siguienteEstado) setEstado(siguienteEstado)
+      if (siguienteCola) setCola(siguienteCola)
+      setActual(nueva)
       return true
     }
 
     async function ciclo() {
-      const ok = await refrescar()
-      if (cancelled) return
-      setRefreshError(!ok)
-      temporizador = setTimeout(ciclo, INTERVALO_REFRESCO_MS)
+      if (cancelled || document.hidden) return
+      if (enCurso) {
+        refrescoPendiente = true
+        return
+      }
+      clearTimeout(temporizador)
+      enCurso = true
+      setActualizando(true)
+      try {
+        const ok = await refrescar()
+        if (cancelled) return
+        setRefreshError(!ok)
+        if (ok) setUltimaConsulta(new Date())
+      } catch (error) {
+        console.error('No se pudo actualizar el lote:', error)
+        if (!cancelled) setRefreshError(true)
+      } finally {
+        enCurso = false
+        if (!cancelled) {
+          setActualizando(false)
+          if (!document.hidden) {
+            if (refrescoPendiente) {
+              refrescoPendiente = false
+              void ciclo()
+            } else {
+              temporizador = setTimeout(ciclo, INTERVALO_REFRESCO_MS)
+            }
+          }
+        }
+      }
     }
 
+    function alCambiarVisibilidad() {
+      if (document.hidden) clearTimeout(temporizador)
+      else void ciclo()
+    }
+
+    refrescarAhora.current = () => { void ciclo() }
+    document.addEventListener('visibilitychange', alCambiarVisibilidad)
     temporizador = setTimeout(ciclo, INTERVALO_REFRESCO_MS)
     return () => {
       cancelled = true
       clearTimeout(temporizador)
+      refrescarAhora.current = null
+      document.removeEventListener('visibilitychange', alCambiarVisibilidad)
     }
   }, [esActivo, actual.id, supabase])
 
@@ -211,6 +263,20 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
         <Alert tono="atencion" rol="status">
           No se pudo actualizar el avance. Se reintentará automáticamente.
         </Alert>
+      )}
+      {esActivo && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+          <p>
+            {ultimaConsulta ? (
+              <>Datos verificados a las <time dateTime={ultimaConsulta.toISOString()}>{ultimaConsulta.toLocaleTimeString('es-EC')}</time></>
+            ) : (
+              'El avance se actualiza automáticamente cada 5 segundos.'
+            )}
+          </p>
+          <Button variante="secundario" tamano="sm" onClick={() => refrescarAhora.current?.()} disabled={actualizando}>
+            Actualizar ahora
+          </Button>
+        </div>
       )}
       {actual.mensaje && (
         <Alert tono={fallido ? 'peligro' : 'info'} titulo="Mensaje del servicio">

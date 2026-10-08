@@ -1,5 +1,5 @@
-import { CargandoPagina } from '@/components/EstadosRuta'
+import { CargandoCasos } from '@/components/EstadosRuta'
 
 export default function Cargando() {
-  return <CargandoPagina />
+  return <CargandoCasos />
 }
