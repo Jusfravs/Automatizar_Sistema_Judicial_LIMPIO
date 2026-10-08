@@ -8,12 +8,13 @@ import {
   EmptyState,
   EstadoBadge,
   PageHeader,
+  Pagination,
   ProgressBar,
   type Columna,
 } from '@/components/ui'
 import type { Database } from '@/lib/database.types'
 import { formatFecha } from '@/lib/fechas'
-import { primerValor } from '@/lib/casos'
+import { leerPagina, primerValor } from '@/lib/casos'
 import { cx } from '@/lib/cx'
 import { FOCO } from '@/components/ui/estilos'
 import {
@@ -38,20 +39,33 @@ function truncate(str: string | null, max: number): string {
   return str.length > max ? str.slice(0, max) + '…' : str
 }
 
-async function getSolicitudes(supabase: Supabase, estado: string | null) {
+const LOTES_POR_PAGINA = 25
+
+async function getSolicitudes(supabase: Supabase, estado: string | null, pagina: number) {
+  const desde = (pagina - 1) * LOTES_POR_PAGINA
   let consulta = supabase
     .from('solicitudes_lote')
-    .select('id, archivo_nombre, modo, parametro, trabajadores, estado, creado_en, mensaje, ejecucion_id')
+    .select('id, archivo_nombre, modo, parametro, trabajadores, estado, creado_en, mensaje, ejecucion_id', { count: 'exact' })
     .order('creado_en', { ascending: false })
-    .limit(100)
+    .range(desde, desde + LOTES_POR_PAGINA - 1)
   if (estado) consulta = consulta.eq('estado', estado)
 
-  const { data, error } = await consulta
+  const { data, error, count } = await consulta
+  // Una página fuera de rango no es un error: simplemente no tiene filas.
+  if (error?.code === 'PGRST103') return { solicitudes: [] as SolicitudLote[], total: count ?? 0, error: false }
   if (error) {
     console.error('Error fetching solicitudes:', error)
-    return { solicitudes: [] as SolicitudLote[], error: true }
+    return { solicitudes: [] as SolicitudLote[], total: 0, error: true }
   }
-  return { solicitudes: (data ?? []) as SolicitudLote[], error: false }
+  return { solicitudes: (data ?? []) as SolicitudLote[], total: count ?? 0, error: false }
+}
+
+function urlLotes(estado: string | null, pagina: number): string {
+  const sp = new URLSearchParams()
+  if (estado) sp.set('estado', estado)
+  if (pagina > 1) sp.set('page', String(pagina))
+  const consulta = sp.toString()
+  return consulta ? `/lotes?${consulta}` : '/lotes'
 }
 
 async function getAvance(supabase: Supabase, solicitudes: SolicitudLote[]) {
@@ -89,11 +103,14 @@ export default async function LotesPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const valor = primerValor((await searchParams).estado)
+  const sp = await searchParams
+  const valor = primerValor(sp.estado)
   const estado = Object.hasOwn(ESTADO_ETIQUETAS, valor) ? valor : null
+  const pagina = leerPagina(primerValor(sp.page))
 
   const supabase = await createClient()
-  const { solicitudes, error } = await getSolicitudes(supabase, estado)
+  const { solicitudes, total, error } = await getSolicitudes(supabase, estado, pagina)
+  const totalPaginas = Math.max(1, Math.ceil(total / LOTES_POR_PAGINA))
   const avance = error ? new Map<string, EstadoEjecucion>() : await getAvance(supabase, solicitudes)
 
   const nuevoLote = <ButtonLink href="/lotes/nuevo">Nuevo lote</ButtonLink>
@@ -176,30 +193,42 @@ export default async function LotesPage({
           No se pudo cargar la lista de lotes.
         </Alert>
       ) : (
-        <DataTable
-          etiqueta="Lotes"
-          columnas={columnas}
-          filas={solicitudes}
-          claveFila={(s) => s.id}
-          vacio={
-            estado ? (
-              <EmptyState
-                titulo="No hay lotes con este estado"
-                accion={
-                  <ButtonLink href="/lotes" variante="secundario">
-                    Ver todos
-                  </ButtonLink>
-                }
-              />
-            ) : (
-              <EmptyState
-                titulo="Aún no hay lotes"
-                descripcion="Sube un Excel para lanzar tu primera consulta."
-                accion={nuevoLote}
-              />
-            )
-          }
-        />
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            <span className="font-semibold tabular-nums text-fg">{total.toLocaleString('es-EC')}</span>{' '}
+            {total === 1 ? 'lote' : 'lotes'}
+          </p>
+          <DataTable
+            etiqueta="Lotes"
+            columnas={columnas}
+            filas={solicitudes}
+            claveFila={(s) => s.id}
+            vacio={
+              estado ? (
+                <EmptyState
+                  titulo="No hay lotes con este estado"
+                  accion={
+                    <ButtonLink href="/lotes" variante="secundario">
+                      Ver todos
+                    </ButtonLink>
+                  }
+                />
+              ) : (
+                <EmptyState
+                  titulo="Aún no hay lotes"
+                  descripcion="Sube un Excel para lanzar tu primera consulta."
+                  accion={nuevoLote}
+                />
+              )
+            }
+          />
+          <Pagination
+            pagina={pagina}
+            totalPaginas={totalPaginas}
+            hrefPagina={(n) => urlLotes(estado, n)}
+            etiqueta="Paginación de lotes"
+          />
+        </div>
       )}
     </div>
   )
