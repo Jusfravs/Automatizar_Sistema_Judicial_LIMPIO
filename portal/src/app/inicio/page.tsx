@@ -16,6 +16,8 @@ import {
 import { calcularAvance, COLUMNAS_ESTADO_EJECUCION, ESTADOS_ACTIVOS, type EstadoEjecucion } from '@/lib/lotes'
 import { formatFecha } from '@/lib/fechas'
 import { leerEstadoServidor, textoServidor, tonoServidor } from '@/lib/servidor'
+import { FOCO } from '@/components/ui/estilos'
+import RefrescoInicio from './RefrescoInicio'
 
 export const metadata = { title: 'Inicio' }
 
@@ -59,7 +61,7 @@ function Indicador({
         ) : (
           <span className="text-3xl font-semibold tabular-nums text-fg">{valor}</span>
         )}
-        <Link href={href} className="mt-auto text-sm font-medium text-primary underline-offset-2 hover:underline">
+        <Link href={href} className={`mt-auto rounded-control text-sm font-medium text-primary underline-offset-2 hover:underline ${FOCO}`}>
           {enlace}
         </Link>
       </CardBody>
@@ -120,6 +122,7 @@ export default async function InicioPage() {
     lotesEnCurso(supabase),
     estadoServidor(supabase),
   ])
+  const consultadoEn = new Date().toISOString()
 
   const nPendientes = leerConteo('las revisiones pendientes', pendientes)
   const nuevoLote = <ButtonLink href="/lotes/nuevo">Nuevo lote</ButtonLink>
@@ -127,6 +130,8 @@ export default async function InicioPage() {
   return (
     <div className="space-y-6">
       <PageHeader titulo="Inicio" descripcion="Resumen de lotes y revisiones" acciones={nuevoLote} />
+
+      <RefrescoInicio consultadoEn={consultadoEn} />
 
       {servidor.tipo === 'caido' ? (
         <Alert tono="peligro" rol="alert" titulo="El servidor de procesamiento no responde">
@@ -198,7 +203,7 @@ export default async function InicioPage() {
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                       <Link
                         href={`/lotes/${lote.id}`}
-                        className="min-w-0 truncate font-medium text-fg underline-offset-2 hover:text-primary hover:underline"
+                        className={`min-w-0 truncate rounded-control font-medium text-fg underline-offset-2 hover:text-primary hover:underline ${FOCO}`}
                       >
                         {lote.archivo_nombre}
                       </Link>

@@ -24,10 +24,10 @@ export function ProgressBar({ valor, etiqueta, tono = 'progreso', className, ...
       className={cx('h-2 w-full overflow-hidden rounded-full bg-surface-2', className)}
       {...props}
     >
-      {/* Se anima el ancho (así lo pide la especificación); reduced-motion lo anula vía globals.css. */}
+      {/* La escala cambia el avance sin recalcular el ancho; reduced-motion lo anula vía globals.css. */}
       <div
-        className={cx('h-full rounded-full transition-[width] duration-(--duracion-lenta) ease-salida', TONO_SOLIDO[tono])}
-        style={{ width: `${v}%` }}
+        className={cx('h-full w-full origin-left rounded-full transition-transform duration-(--duracion-lenta) ease-salida', TONO_SOLIDO[tono])}
+        style={{ transform: `scaleX(${v / 100})` }}
       />
     </div>
   )

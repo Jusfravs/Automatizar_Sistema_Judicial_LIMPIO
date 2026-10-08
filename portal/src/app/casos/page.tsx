@@ -16,6 +16,7 @@ import {
   type Columna,
 } from '@/components/ui'
 import { IconoCerrar } from '@/components/ui/iconos'
+import { FOCO } from '@/components/ui/estilos'
 import { formatFecha, formatFechaProcesal } from '@/lib/fechas'
 import {
   CASOS_POR_PAGINA,
@@ -110,7 +111,7 @@ function Chip({ texto, href }: { texto: string; href: string }) {
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-1.5 rounded-full border border-subtle bg-surface px-3 py-1 text-sm text-fg hover:bg-surface-2"
+      className={`inline-flex items-center gap-1.5 rounded-full border border-subtle bg-surface px-3 py-1 text-sm text-fg transition-colors hover:bg-surface-2 ${FOCO}`}
     >
       {texto}
       <IconoCerrar className="size-3.5 text-muted" />
@@ -127,7 +128,7 @@ const COLUMNAS: Columna<ExpedienteLista>[] = [
     celda: (c) => (
       <Link
         href={`/casos/${encodeURIComponent(c.numero_causa)}`}
-        className="whitespace-nowrap font-mono text-sm font-medium text-fg hover:text-primary hover:underline"
+        className={`whitespace-nowrap rounded-sm font-mono text-sm font-medium text-fg underline-offset-2 transition-colors hover:text-primary hover:underline ${FOCO}`}
       >
         {c.numero_causa}
       </Link>
