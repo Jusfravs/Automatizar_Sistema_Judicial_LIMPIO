@@ -11,6 +11,7 @@ import { DataTable, type Columna } from '@/components/ui/DataTable'
 import { Dialog } from '@/components/ui/Dialog'
 import { EstadoBadge } from '@/components/ui/EstadoBadge'
 import { LineaTiempo, type Paso } from '@/components/ui/LineaTiempo'
+import { NumeroAnimado } from '@/components/ui/NumeroAnimado'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { cx } from '@/lib/cx'
@@ -243,26 +244,35 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
         acciones={actual.resultado_ruta || puedeCancelar ? acciones : undefined}
       />
 
+      {/* .despliegue: cada aviso abre su espacio con movimiento en vez de empujar el contenido de golpe. */}
       {downloadError && (
-        <Alert tono="peligro" rol="alert">
-          {downloadError}
-        </Alert>
+        <div className="despliegue">
+          <Alert tono="peligro" rol="alert">
+            {downloadError}
+          </Alert>
+        </div>
       )}
       {esActivo && actual.cancelar && (
-        <Alert tono="info" rol="status">
-          Cancelación solicitada. El servicio detendrá el lote en breve.
-        </Alert>
+        <div className="despliegue">
+          <Alert tono="info" rol="status">
+            Cancelación solicitada. El servicio detendrá el lote en breve.
+          </Alert>
+        </div>
       )}
       {avisoServidor && esActivo && !actual.tomado_en && (
-        <Alert tono="peligro" rol="alert" titulo="Este lote no avanzará por ahora">
-          El servidor de procesamiento no responde ({avisoServidor.toLowerCase()}). El lote se tomará solo en cuanto el servicio
-          vuelva a estar activo; no hace falta crearlo de nuevo.
-        </Alert>
+        <div className="despliegue">
+          <Alert tono="peligro" rol="alert" titulo="Este lote no avanzará por ahora">
+            El servidor de procesamiento no responde ({avisoServidor.toLowerCase()}). El lote se tomará solo en cuanto el servicio
+            vuelva a estar activo; no hace falta crearlo de nuevo.
+          </Alert>
+        </div>
       )}
       {refreshError && (
-        <Alert tono="atencion" rol="status">
-          No se pudo actualizar el avance. Se reintentará automáticamente.
-        </Alert>
+        <div className="despliegue">
+          <Alert tono="atencion" rol="status">
+            No se pudo actualizar el avance. Se reintentará automáticamente.
+          </Alert>
+        </div>
       )}
       {esActivo && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
@@ -273,15 +283,17 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
               'El avance se actualiza automáticamente cada 5 segundos.'
             )}
           </p>
-          <Button variante="secundario" tamano="sm" onClick={() => refrescarAhora.current?.()} disabled={actualizando}>
+          <Button variante="secundario" tamano="sm" onClick={() => refrescarAhora.current?.()} cargando={actualizando}>
             Actualizar ahora
           </Button>
         </div>
       )}
       {actual.mensaje && (
-        <Alert tono={fallido ? 'peligro' : 'info'} titulo="Mensaje del servicio">
-          {actual.mensaje}
-        </Alert>
+        <div className="despliegue">
+          <Alert tono={fallido ? 'peligro' : 'info'} titulo="Mensaje del servicio">
+            {actual.mensaje}
+          </Alert>
+        </div>
       )}
 
       <Card>
@@ -299,7 +311,10 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
               {estado ? (
                 <div className="space-y-5">
                   <div className="flex items-end gap-4">
-                    <span className="text-4xl font-semibold tabular-nums text-fg">{avance} %</span>
+                    <span className="whitespace-nowrap text-display font-semibold text-fg">
+                      <NumeroAnimado valor={avance} />
+                      <span className="text-muted">&nbsp;%</span>
+                    </span>
                     <ProgressBar className="mb-2 flex-1" valor={avance} etiqueta="Avance del lote" />
                   </div>
                   <dl className="grid grid-cols-2 gap-4 sm:grid-cols-5">
@@ -465,7 +480,9 @@ function Contador({ termino, valor, peligro = false }: { termino: string; valor:
   return (
     <div>
       <dt className="text-xs text-muted">{termino}</dt>
-      <dd className={cx('text-xl font-semibold tabular-nums', peligro && n > 0 ? 'text-peligro-fg' : 'text-fg')}>{n}</dd>
+      <dd className={cx('text-xl font-semibold tabular-nums transition-colors', peligro && n > 0 ? 'text-peligro-fg' : 'text-fg')}>
+        <NumeroAnimado valor={n} />
+      </dd>
     </div>
   )
 }

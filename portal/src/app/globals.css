@@ -464,6 +464,22 @@ body {
 }
 
 /*
+ * Despliegue al aparecer: un aviso que se inserta abre su espacio (altura 0 → auto) en vez de
+ * empujar el contenido de golpe. Sin soporte de interpolate-size, aparece con un fundido.
+ */
+.despliegue {
+  overflow: clip;
+  overflow-clip-margin: 4px; /* no recorta el anillo de foco de lo que contiene */
+  interpolate-size: allow-keywords;
+  transition:
+    height var(--duracion-lenta) var(--curva-salida),
+    opacity var(--duracion-lenta) var(--curva-salida);
+}
+@starting-style {
+  .despliegue { height: 0; opacity: 0; }
+}
+
+/*
  * Texto plegable ("Ver más"). Sin soporte de calc-size: line-clamp a 3 líneas, cambio inmediato.
  * Con soporte: la altura se interpola entre ~3,5 líneas (con desvanecido inferior) y auto.
  */
