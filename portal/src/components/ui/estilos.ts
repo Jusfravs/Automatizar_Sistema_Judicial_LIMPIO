@@ -30,7 +30,7 @@ const BOTON_TAMANOS: Record<TamanoBoton, string> = {
   md: 'h-9 px-4 text-sm',
 }
 
-/** Deshabilitado sin bajar el contraste del texto (system.md, Controles). */
+/** Deshabilitado sin bajar el contraste del texto (docs/system.md, sección 4). */
 const BOTON_DESHABILITADO = 'cursor-not-allowed border border-subtle bg-surface-2 text-muted active:scale-100'
 
 export function clasesBoton({

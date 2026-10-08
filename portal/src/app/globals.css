@@ -10,7 +10,7 @@
  *
  * Tema: claro por defecto; oscuro si el sistema lo pide (salvo data-theme="light")
  * o si <html data-theme="dark">. Los dos bloques oscuros deben mantenerse idénticos.
- * Contraste WCAG AA verificado par a par (ver system.md, sección Contraste).
+ * Contraste WCAG AA verificado par a par (ver docs/system.md, sección 5).
  */
 
 /* ---------- 1. Primitivos de marca (no dependen del tema) ---------- */
@@ -31,6 +31,12 @@
   --duracion-lenta: 240ms; /* modales, paneles */
   --curva-salida: cubic-bezier(0.23, 1, 0.32, 1); /* entradas e interacción */
   --curva-movimiento: cubic-bezier(0.77, 0, 0.175, 1); /* desplazamiento en pantalla */
+  /* Muelle casi crítico (1 % de rebote): indicadores que se desplazan y elementos que se asientan.
+     Generado con zeta 0.82; pensado para 360ms. Es física sutil, no rebote decorativo. */
+  --curva-muelle: linear(0, 0.035, 0.118, 0.227, 0.345, 0.461, 0.568, 0.663, 0.745, 0.812, 0.866, 0.909, 0.942, 0.966, 0.983, 0.995, 1.003, 1.008, 1.01, 1.011, 1.011, 1.01, 1.009, 1.008, 1);
+  --duracion-movimiento: 360ms; /* morph de elementos compartidos, indicador de navegación */
+  --duracion-pagina: 200ms; /* fundido entre pantallas */
+  --escalon: 40ms; /* retraso entre elementos de una entrada escalonada */
 
   /* Capas de apilamiento */
   --z-cabecera: 10;
@@ -323,9 +329,21 @@
   --color-atencion-on-solid: var(--atencion-on-solid);
 
   /* Tipografía (las variables --font-montserrat / --font-source-serif las define layout.tsx con next/font) */
-  --font-sans: var(--font-montserrat, "Montserrat"), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-sans: var(--font-public-sans, "Public Sans"), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   --font-serif: var(--font-source-serif, "Source Serif 4"), Georgia, "Times New Roman", serif;
   --font-mono: var(--font-geist-mono, ui-monospace), ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  /* Escala tipográfica con nombre de uso (las de Tailwind siguen para texto corrido y controles).
+     titulo: h1 de cada pantalla (serif). display: cifras protagonistas (KPI, porcentaje del lote). */
+  --text-titulo: 1.75rem;
+  --text-titulo--line-height: 1.2;
+  --text-titulo--letter-spacing: -0.012em;
+  --text-display: 2.5rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.025em;
+  --text-rotulo: 0.6875rem; /* cabeceras de tabla y rótulos en versalitas */
+  --text-rotulo--line-height: 1rem;
+  --text-rotulo--letter-spacing: 0.06em;
 
   /* Radios con nombre de uso (no pisan rounded-sm/md/lg heredados) */
   --radius-control: 6px; /* botones, inputs, chips cuadrados */
@@ -340,6 +358,11 @@
   /* Movimiento: ease-salida / ease-movimiento; duración vía duration-(--duracion-base) */
   --ease-salida: var(--curva-salida);
   --ease-movimiento: var(--curva-movimiento);
+  --ease-muelle: var(--curva-muelle);
+  --animate-aparecer: aparecer var(--duracion-lenta) var(--curva-salida) both;
+  --animate-subir: subir var(--duracion-lenta) var(--curva-salida) both;
+  --animate-latido: latido 2s var(--curva-salida) infinite;
+  --animate-barrido: barrido 1.1s var(--curva-movimiento) infinite;
   --default-transition-duration: var(--duracion-rapida);
   --default-transition-timing-function: var(--curva-salida);
 }
@@ -348,9 +371,125 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
+  font-optical-sizing: auto;
+}
+
+/* ---------- 4. Movimiento ---------- */
+
+@keyframes aparecer {
+  from { opacity: 0; }
+}
+
+@keyframes subir {
+  from { opacity: 0; translate: 0 6px; }
+}
+
+/* Onda que sale del punto de estado "vivo" (servidor activo). Solo opacidad y escala. */
+@keyframes latido {
+  0% { opacity: 0.55; scale: 1; }
+  70%, 100% { opacity: 0; scale: 2.4; }
+}
+
+/* Barra indeterminada fina: "cargando sin porcentaje". */
+@keyframes barrido {
+  from { translate: -100% 0; }
+  to { translate: 250% 0; }
+}
+
+/*
+ * Entrada escalonada: los elementos aparecen subiendo 6px, uno tras otro (máx. 6 escalones).
+ * .entrada-escalonada anima a sus hijos; .entrada-pagina (en AppShell) anima las secciones de cada
+ * pantalla, es decir, los hijos de la raíz de la página.
+ * Solo corre al montar: un refresco de datos no la repite porque React conserva los nodos.
+ */
+.entrada-escalonada > *,
+.entrada-pagina > * > * {
+  animation: var(--animate-subir);
+}
+.entrada-escalonada > :nth-child(2), .entrada-pagina > * > :nth-child(2) { animation-delay: calc(var(--escalon) * 1); }
+.entrada-escalonada > :nth-child(3), .entrada-pagina > * > :nth-child(3) { animation-delay: calc(var(--escalon) * 2); }
+.entrada-escalonada > :nth-child(4), .entrada-pagina > * > :nth-child(4) { animation-delay: calc(var(--escalon) * 3); }
+.entrada-escalonada > :nth-child(5), .entrada-pagina > * > :nth-child(5) { animation-delay: calc(var(--escalon) * 4); }
+.entrada-escalonada > :nth-child(n + 6), .entrada-pagina > * > :nth-child(n + 6) { animation-delay: calc(var(--escalon) * 5); }
+
+/*
+ * Modal nativo con entrada y salida. allow-discrete deja que display/overlay cambien al final
+ * de la salida, así el cierre también se anima. Salida más corta que la entrada.
+ */
+.dialogo-animado,
+.dialogo-animado::backdrop {
+  transition-property: opacity, scale, display, overlay;
+  transition-behavior: allow-discrete;
+  transition-duration: var(--duracion-base);
+  transition-timing-function: var(--curva-salida);
+}
+.dialogo-animado { opacity: 0; scale: 0.97; }
+.dialogo-animado::backdrop { opacity: 0; }
+.dialogo-animado[open] { opacity: 1; scale: 1; transition-duration: var(--duracion-lenta); }
+.dialogo-animado[open]::backdrop { opacity: 1; transition-duration: var(--duracion-lenta); }
+@starting-style {
+  .dialogo-animado[open] { opacity: 0; scale: 0.97; }
+  .dialogo-animado[open]::backdrop { opacity: 0; }
+}
+
+/* Panel desplegable que usa el atributo hidden (menú móvil): entra y sale con el mismo gesto. */
+.panel-desplegable {
+  transition-property: opacity, translate, display;
+  transition-behavior: allow-discrete;
+  transition-duration: var(--duracion-base);
+  transition-timing-function: var(--curva-salida);
+}
+.panel-desplegable[hidden] { opacity: 0; translate: 0 -4px; transition-duration: var(--duracion-rapida); }
+@starting-style {
+  .panel-desplegable:not([hidden]) { opacity: 0; translate: 0 -4px; }
+}
+
+/*
+ * View Transitions (React <ViewTransition>). La raíz (barra lateral, cabecera) no se anima:
+ * es idéntica entre pantallas. El contenido usa la clase "pagina": la vista saliente se va rápido y
+ * la entrante aparece; los elementos nuevos además suben con .entrada-escalonada.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-group(.pagina) {
+  animation-duration: var(--duracion-pagina);
+}
+::view-transition-old(.pagina) {
+  animation: var(--duracion-rapida) var(--curva-salida) both aparecer reverse;
+}
+::view-transition-new(.pagina) {
+  animation: var(--duracion-pagina) var(--curva-salida) both aparecer;
+}
+
+/* El indicador de la navegación se desliza al nuevo ítem con el muelle. */
+::view-transition-group(.indicador) {
+  animation-duration: var(--duracion-movimiento);
+  animation-timing-function: var(--curva-muelle);
+}
+
+/* Texto compartido entre pantallas (número de causa): evita el escalado borroso del texto. */
+::view-transition-group(.texto-compartido) {
+  animation-duration: var(--duracion-movimiento);
+  animation-timing-function: var(--curva-movimiento);
+}
+::view-transition-old(.texto-compartido) {
+  display: none;
+}
+::view-transition-new(.texto-compartido) {
+  animation: none;
+  object-fit: none;
+  object-position: left top;
 }
 
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+
   *,
   *::before,
   *::after {

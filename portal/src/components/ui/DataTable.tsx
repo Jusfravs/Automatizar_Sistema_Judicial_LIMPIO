@@ -50,7 +50,7 @@ export function DataTable<T>({ columnas, filas, claveFila, vacio, etiqueta, clas
                 <th
                   key={c.clave}
                   scope="col"
-                  className={cx('px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted', c.className)}
+                  className={cx('px-3 py-2 text-left text-rotulo font-semibold uppercase text-muted', c.className)}
                 >
                   {c.encabezado}
                 </th>

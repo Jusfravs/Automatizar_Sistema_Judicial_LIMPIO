@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { ViewTransition, type ReactNode } from 'react'
 import { MenuMovil, NavPrincipal } from '@/components/AppShellCliente'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -77,7 +77,14 @@ export function AppShell({ nombre, rol, pendientes, children }: AppShellProps) {
       <MenuMovil marca={<Marca />} pie={pie} pendientes={pendientes} />
 
       <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-7xl px-4 py-6 outline-none sm:px-6 lg:px-8 lg:py-8">
-        {children}
+        {/*
+          Transición entre pantallas. El shell vive en el layout de (portal), así que este límite
+          persiste: cada navegación, carga (Suspense) o refresco que cambia el contenido es un "update"
+          con fundido corto. Las secciones de una pantalla recién montada además suben escalonadas.
+        */}
+        <ViewTransition update="pagina" default="none">
+          <div className="entrada-pagina">{children}</div>
+        </ViewTransition>
       </main>
     </div>
   )

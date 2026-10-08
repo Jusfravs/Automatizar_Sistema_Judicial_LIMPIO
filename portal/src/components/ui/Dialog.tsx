@@ -19,8 +19,8 @@ export type DialogProps = {
 
 /**
  * Modal sobre <dialog> nativo con showModal(): trampa de foco, Escape y capa superior los da el navegador.
- * Al cerrarse devuelve el foco al elemento que lo abrió. La entrada se anima con @starting-style
- * y reduced-motion la anula (globals.css).
+ * Al cerrarse devuelve el foco al elemento que lo abrió. Entrada y salida (más corta) se animan con
+ * .dialogo-animado (globals.css: @starting-style + allow-discrete); reduced-motion las anula.
  */
 export function Dialog({ abierto, alCerrar, titulo, descripcion, children, acciones, className }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -73,7 +73,7 @@ export function Dialog({ abierto, alCerrar, titulo, descripcion, children, accio
       }}
       className={cx(
         'm-auto w-full max-w-lg bg-transparent p-4 text-fg backdrop:bg-velo',
-        'transition duration-(--duracion-lenta) ease-salida starting:open:scale-95 starting:open:opacity-0',
+        'dialogo-animado',
         className,
       )}
     >

@@ -127,7 +127,7 @@ export function MenuMovil({ marca, pie, pendientes }: { marca: ReactNode; pie: R
         id={panelId}
         hidden={!abierto}
         onClick={alPulsarPanel}
-        className="fixed inset-x-0 top-14 bottom-0 overflow-y-auto border-t border-on-nav/15 bg-nav transition duration-(--duracion-base) ease-salida starting:-translate-y-1 starting:opacity-0"
+        className="panel-desplegable fixed inset-x-0 top-14 bottom-0 overflow-y-auto border-t border-on-nav/15 bg-nav"
       >
         <div className="space-y-6 px-4 py-4">
           <NavPrincipal pendientes={pendientes} />
