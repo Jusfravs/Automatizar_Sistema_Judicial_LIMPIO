@@ -41,7 +41,9 @@ export function Button({
       disabled={disabled && !cargando}
       aria-disabled={cargando || undefined}
       aria-busy={cargando || undefined}
-      onClick={alPulsar}
+      // Solo se adjunta manejador si hace falta: Button también se usa en componentes de servidor
+      // (p. ej. "Cerrar sesión" en AppShell), donde no se pueden pasar funciones.
+      onClick={cargando || onClick ? alPulsar : undefined}
       className={clasesBoton({
         variante,
         tamano,

@@ -219,7 +219,8 @@ export default async function InicioPage() {
         <RefrescoInicio consultadoEn={consultadoEn} />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Dos columnas ya en móvil: los cuatro indicadores caben en un vistazo sin desplazar. */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <Indicador
           etiqueta="Lotes activos"
           valor={leerConteo('los lotes activos', activos)}

@@ -92,7 +92,9 @@ export function Dialog({
         pulsacionEnTelon.current = false
       }}
       className={cx(
-        'm-auto w-full bg-transparent p-4 text-fg backdrop:bg-velo',
+        // overflow-visible: el navegador pone overflow:auto a los modales y recortaba la sombra de la
+        // tarjeta en un rectángulo visible. El contenido largo se desplaza dentro de la tarjeta.
+        'm-auto w-full overflow-visible bg-transparent p-4 text-fg backdrop:bg-velo',
         ancho === 'amplio' ? 'max-w-xl' : 'max-w-lg',
         animado && 'dialogo-animado',
         className,
