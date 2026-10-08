@@ -531,6 +531,12 @@ body {
     animation: none !important;
   }
 
+  /* ::backdrop no lo alcanza el selector universal (revisión de Codex F0-01). */
+  *::backdrop {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+
   *,
   *::before,
   *::after {
