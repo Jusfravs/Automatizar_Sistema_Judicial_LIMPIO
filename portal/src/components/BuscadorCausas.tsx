@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { cx } from '@/lib/cx'
+import { NAVEGACION } from '@/lib/transiciones'
 import { Dialog } from '@/components/ui/Dialog'
 import { EstadoBadge } from '@/components/ui/EstadoBadge'
 import { CONTROL, FOCO } from '@/components/ui/estilos'
@@ -63,7 +64,9 @@ export function BotonBuscarCausa({ variante }: { variante: 'barra' | 'icono' }) 
     >
       <IconoBuscar className="size-4 shrink-0" />
       <span className="flex-1 text-left">Buscar causa</span>
-      <kbd className="rounded-sm border border-on-nav/25 px-1.5 font-sans text-rotulo text-on-nav/70">Ctrl K</kbd>
+      <kbd aria-hidden="true" className="rounded-sm border border-on-nav/25 px-1.5 font-sans text-rotulo text-on-nav/70">
+        Ctrl K
+      </kbd>
     </button>
   )
 }
@@ -71,8 +74,8 @@ export function BotonBuscarCausa({ variante }: { variante: 'barra' | 'icono' }) 
 type Estado = 'inactivo' | 'buscando' | 'listo' | 'error'
 
 /**
- * Búsqueda global de causas (Ctrl/⌘+K o "/"). Busca por número de causa, actor o demandado y abre
- * el detalle. Patrón combobox de ARIA: el foco queda en el campo y las flechas mueven la opción
+ * Búsqueda global de causas (Ctrl/⌘+K; sin atajos de una sola tecla, WCAG 2.1.4). Busca por número
+ * de causa, actor o demandado y abre el detalle. Patrón combobox de ARIA: el foco queda en el campo y las flechas mueven la opción
  * activa (aria-activedescendant). Se monta una sola vez, en el shell.
  */
 export function BuscadorCausas() {
@@ -91,15 +94,10 @@ export function BuscadorCausas() {
   const termino = limpiar(texto)
   const suficiente = termino.length >= MINIMO_CARACTERES
 
-  // Atajos globales: Ctrl/⌘+K siempre; "/" solo si no se está escribiendo en otro campo.
+  // Atajo global con modificador: Ctrl/⌘+K.
   useEffect(() => {
     function alTeclear(e: globalThis.KeyboardEvent) {
-      const enCampo =
-        e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable="true"]')
-      if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault()
-        setAbierto(true)
-      } else if (e.key === '/' && !enCampo && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey) && !e.altKey) {
         e.preventDefault()
         setAbierto(true)
       }
@@ -112,6 +110,12 @@ export function BuscadorCausas() {
       window.removeEventListener(EVENTO_ABRIR_BUSCADOR, alPedir)
     }
   }, [])
+
+  // La opción activa siempre visible al moverse con las flechas.
+  useEffect(() => {
+    if (!abierto) return
+    document.getElementById(`${listaId}-op-${activo}`)?.scrollIntoView({ block: 'nearest' })
+  }, [abierto, activo, listaId])
 
   // showModal enfoca el primer control (el botón Cerrar): llevamos el foco al campo.
   useEffect(() => {
@@ -150,7 +154,7 @@ export function BuscadorCausas() {
     setTexto('')
     setResultados([])
     setEstado('inactivo')
-    router.push(`/casos/${encodeURIComponent(numero)}`)
+    router.push(`/casos/${encodeURIComponent(numero)}`, { transitionTypes: NAVEGACION })
   }
 
   function alTeclearCampo(e: KeyboardEvent<HTMLInputElement>) {
@@ -176,17 +180,21 @@ export function BuscadorCausas() {
   if (!suficiente) mensaje = 'Escribe al menos 2 caracteres: número de causa, actor o demandado.'
   else if (estado === 'error') mensaje = 'No se pudo completar la búsqueda. Revisa tu conexión e inténtalo de nuevo.'
   else if (estado === 'listo' && visibles.length === 0) mensaje = `No hay causas que coincidan con «${termino}».`
+  else if (estado === 'listo' && visibles.length >= MAXIMO_RESULTADOS)
+    mensaje = `Se muestran las ${MAXIMO_RESULTADOS} más recientes. Escribe más para afinar la búsqueda.`
   else if (estado === 'listo') mensaje = visibles.length === 1 ? '1 causa encontrada.' : `${visibles.length} causas encontradas.`
   else mensaje = 'Buscando…'
 
   return (
-    <Dialog abierto={abierto} alCerrar={() => setAbierto(false)} titulo="Buscar causa" ancho="amplio" className="mt-[12vh]">
+    <Dialog abierto={abierto} alCerrar={() => setAbierto(false)} titulo="Buscar causa" ancho="amplio" animado={false} className="mt-[12vh]">
       <div className="-mx-6 -mb-4 -mt-1">
         <div className="relative px-6 pb-3">
           <IconoBuscar className="pointer-events-none absolute left-9 top-[calc(50%-6px)] size-4 -translate-y-1/2 text-muted" />
           <input
             ref={campo}
-            type="search"
+            type="text"
+            inputMode="search"
+            enterKeyHint="go"
             role="combobox"
             aria-label="Buscar causa"
             aria-expanded={mostrarLista}
@@ -227,15 +235,18 @@ export function BuscadorCausas() {
               onMouseMove={() => setActivo(i)}
               onClick={() => abrirCausa(r.numero_causa)}
               className={cx(
-                'mx-1.5 flex cursor-pointer items-center gap-3 rounded-control px-4.5 py-2.5 transition-colors duration-(--duracion-rapida)',
+                // Sin transición: el resaltado lo mueven las flechas y debe ser instantáneo.
+                'mx-1.5 flex cursor-pointer items-center gap-3 rounded-control px-4.5 py-2.5',
                 i === activo && 'bg-surface-2',
               )}
             >
               <div className="min-w-0 flex-1 space-y-0.5">
                 <p className="font-mono text-sm font-semibold tracking-tight text-fg">{r.numero_causa}</p>
-                <p className="truncate text-xs text-muted">
-                  {[r.fase_actual, partes(r)].filter(Boolean).join(' · ') || 'Sin clasificación todavía'}
-                </p>
+                {/* Las partes van en su propia línea: suelen ser el dato que se buscó. */}
+                {partes(r) ? (
+                  <p className="line-clamp-2 text-xs text-fg [overflow-wrap:anywhere]">{partes(r)}</p>
+                ) : null}
+                <p className="truncate text-xs text-muted">{r.fase_actual ?? 'Sin clasificación todavía'}</p>
               </div>
               {r.estado ? <EstadoBadge tipo="caso" estado={r.estado} /> : null}
             </li>

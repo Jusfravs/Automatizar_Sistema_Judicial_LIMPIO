@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useId, useRef, useState, ViewTransition, type ComponentType, type FocusEvent, type MouseEvent, type ReactNode } from 'react'
 import { cx } from '@/lib/cx'
+import { NAVEGACION } from '@/lib/transiciones'
 import { FOCO } from '@/components/ui/estilos'
 import { IconoCasos, IconoCerrar, IconoInicio, IconoLotes, IconoMenu } from '@/components/ui/iconos'
 
@@ -78,6 +79,7 @@ export function NavPrincipal({
             <li key={href}>
               <Link
                 href={href}
+                transitionTypes={NAVEGACION}
                 aria-current={activo ? 'page' : undefined}
                 className={cx(
                   'relative flex h-9 items-center gap-3 rounded-control px-3 text-sm transition-colors',

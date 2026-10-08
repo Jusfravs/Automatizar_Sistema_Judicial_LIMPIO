@@ -60,7 +60,8 @@ Un título que es un número de causa o un ID va en **mono, no en serif**
 ## 3. Movimiento
 
 El movimiento comunica **continuidad** (es lo mismo y se movió), **llegada** (el dato acaba de
-cargar) o **respuesta** (te oí). Si no comunica nada de eso, no se anima.
+cargar) o **respuesta** (te oí). Si no comunica nada de eso, no se anima. Un portal de trabajo se
+usa cientos de veces al día: lo frecuente se siente inmediato, lo excepcional se anima.
 
 ### 3.1 Tokens
 | Token | Valor | Uso |
@@ -68,36 +69,49 @@ cargar) o **respuesta** (te oí). Si no comunica nada de eso, no se anima.
 | `--duracion-rapida` | 120ms | Hover, press, salida de vistas. |
 | `--duracion-base` | 180ms | Menús, popovers, salida de modales. |
 | `--duracion-pagina` | 200ms | Fundido entre pantallas. |
-| `--duracion-lenta` | 240ms | Entrada de modales y paneles, entradas de contenido. |
-| `--duracion-movimiento` | 360ms | Elementos compartidos y el indicador de navegación. |
+| `--duracion-lenta` | 240ms | Entrada de modales y paneles, elementos compartidos, indicador de navegación. |
 | `--escalon` | 40ms | Retraso entre los elementos de una entrada escalonada. |
-| `--curva-salida` | `cubic-bezier(.23,1,.32,1)` | Entradas e interacción (`ease-salida`). |
-| `--curva-movimiento` | `cubic-bezier(.77,0,.175,1)` | Desplazamientos en pantalla (`ease-movimiento`). |
-| `--curva-muelle` | `linear(...)`, 1 % de rebote | Cosas que se "asientan" (`ease-muelle`). |
+| `--curva-salida` | `cubic-bezier(.23,1,.32,1)` | Entradas, interacción y elementos compartidos (`ease-salida`). |
+| `--curva-movimiento` | `cubic-bezier(.77,0,.175,1)` | Desplazamientos largos en pantalla (`ease-movimiento`). |
 
 ### 3.2 Recursos disponibles
-- **Transición entre pantallas:** `<ViewTransition update="pagina">` en `AppShell`. La vista que
-  sale se va en 120ms y la que entra aparece en 200ms. La barra lateral no se anima.
-- **Entrada escalonada:** `.entrada-pagina` (en el shell) hace subir 6px las secciones de cada
-  pantalla nueva, con 40ms entre cada una y un máximo de 6 escalones. `.entrada-escalonada` hace
-  lo mismo con los hijos de cualquier lista. Solo corre al montar; un refresco no la repite.
-- **Animaciones:** `animate-aparecer`, `animate-subir`, `animate-latido` (onda de estado vivo) y
-  `animate-barrido` (carga indeterminada).
-- **Modal** (`Dialog`): `.dialogo-animado` anima la entrada y también la salida, que es más corta.
+- **Transición entre pantallas:** `<ViewTransition update={{ navegacion: 'pagina', default: 'none' }}>`
+  en `AppShell`. **Solo anima las navegaciones etiquetadas** con `NAVEGACION` (`src/lib/transiciones.ts`):
+  `<Link transitionTypes={NAVEGACION}>` o `router.push(url, { transitionTypes: NAVEGACION })`.
+  Refrescos, filtros, orden, paginación y la carga tras el esqueleto son silenciosos. La vista que
+  sale se va en 120ms y la nueva aparece en 200ms. La barra lateral ni se pinta ni bloquea clics.
+- **Elementos compartidos** (sin tipo, también con Atrás): el resaltado de la navegación se desliza
+  (`indicador`) y el número de causa viaja de la lista al detalle (`texto-compartido`, en
+  `NumeroCausaCompartido`). Un nombre de transición solo puede estar montado una vez.
+- **Entrada escalonada** `.entrada-escalonada`: solo en vistas que se ven una vez por sesión (login).
+  Nunca en navegación repetida ni en listas que se paginan.
+- **Animaciones:** `animate-aparecer`, `animate-subir`, `animate-latido` (una onda por latido real,
+  reiniciada con `key`) y `animate-barrido` (carga indeterminada, pausada cuando no se usa).
+- **Modal** (`Dialog`): `.dialogo-animado` anima la entrada y la salida (más corta; requiere `overlay`).
+  Las paletas que se abren por teclado (Ctrl+K) usan `animado={false}`.
 - **Paneles con `hidden`:** `.panel-desplegable`.
-- **Cifras:** `NumeroAnimado` cuenta del valor anterior al nuevo cuando cambia (máx. 600ms).
-  Nunca cuenta desde cero en la carga.
-- **Texto compartido entre pantallas:** clase de transición `texto-compartido`. Evita el escalado
-  borroso del texto.
-- **Botón `cargando`:** el spinner reemplaza la etiqueta sin cambiar el ancho del botón.
+- **Cifras:** `NumeroAnimado` cuenta desde la cifra visible hasta la nueva (máx. 400ms; se puede
+  interrumpir). Nunca cuenta desde cero en la carga.
+- **Avisos que aparecen después de cargar:** `.despliegue` (con `useHidratado` para no animar los
+  que ya estaban).
+- **Botón `cargando`:** el spinner reemplaza la etiqueta sin cambiar el ancho; usa `aria-disabled`
+  para que el foco no salga expulsado.
 
 ### 3.3 Reglas
-- Anima solo `transform`/`translate`/`scale`, `opacity` y `clip-path`. Nunca `width`, `height`,
-  `top` ni `left` (para progreso usa `scaleX`).
-- Las salidas son más cortas que las entradas.
-- No animes acciones de alta frecuencia (teclear, cada fila de una tabla al paginar).
-- `prefers-reduced-motion`: `globals.css` anula animaciones, transiciones y View Transitions.
-  Todo debe funcionar igual sin movimiento.
+- Anima solo `transform`/`translate`/`scale`, `opacity` y `clip-path`. Para progreso usa `scaleX`.
+  **Excepción documentada:** `height` con `interpolate-size` en despliegues (`.despliegue`) y en
+  "Ver más" (`.texto-plegable`), a 240ms, nunca en listas.
+- Las salidas son más cortas que las entradas. Un clic no tiene impulso: sin rebotes.
+- **No animes lo que dispara el teclado ni lo de alta frecuencia:** escribir, moverse con flechas,
+  atajos (1–4, Ctrl+K), cada fila al paginar, refrescos de fondo.
+- `prefers-reduced-motion`: se conserva el fundido (opacidad) y se quita todo desplazamiento;
+  los elementos compartidos saltan a su sitio, sin retrasos ni ondas. Todo funciona igual sin
+  movimiento.
+
+### 3.4 Atajos de teclado (WCAG 2.1.4)
+- Globales solo con modificador: **Ctrl/⌘+K** (buscar causa), **Ctrl+Enter** (guardar revisión).
+- Teclas sueltas (**1–4** en la revisión) solo con el foco dentro de su formulario y fuera de
+  campos de texto.
 
 ## 4. Controles
 - El borde de los controles usa `--border-strong` (≥ 3:1). En hover pasa a tinta y el foco usa
@@ -119,6 +133,9 @@ cargar) o **respuesta** (te oí). Si no comunica nada de eso, no se anima.
 | focus / surface-2 (UI ≥ 3:1) | 4.35:1 | (azul claro) |
 | on-nav / nav | 9.18:1 | 11.59:1 |
 | ámbar (relleno) / nav | 4.59:1 | — |
+| on-nav/85 / nav (menú) | 7.10:1 | 8.78:1 |
+| on-nav/80 / botón de búsqueda | 5.82:1 | 7.12:1 |
+| on-nav/70 / nav (kbd, pie del login) | 4.86:1 | 5.85:1 |
 | info-fg / info-soft | 6.55:1 | 9.28:1 |
 | progreso-fg / soft | 7.87:1 | 8.55:1 |
 | exito-fg / soft | 6.35:1 | 9.04:1 |

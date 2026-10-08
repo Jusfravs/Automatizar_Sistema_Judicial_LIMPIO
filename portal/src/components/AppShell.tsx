@@ -9,6 +9,7 @@ import { IconoSalir } from '@/components/ui/iconos'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { cx } from '@/lib/cx'
 import { rolEtiqueta } from '@/lib/roles'
+import { NAVEGACION } from '@/lib/transiciones'
 
 export type AppShellProps = {
   nombre: string
@@ -20,7 +21,7 @@ export type AppShellProps = {
 
 function Marca() {
   return (
-    <Link href="/" className={cx('flex items-center gap-2.5 rounded-control', FOCO)}>
+    <Link href="/" transitionTypes={NAVEGACION} className={cx('flex items-center gap-2.5 rounded-control', FOCO)}>
       {/* Detalle ámbar: relleno sobre azul (4,59:1), nunca texto ámbar. */}
       <span aria-hidden="true" className="h-5 w-1 shrink-0 rounded-full bg-accent" />
       <span className="font-serif text-lg font-semibold tracking-tight">Gestión Judicial</span>
@@ -84,11 +85,11 @@ export function AppShell({ nombre, rol, pendientes, children }: AppShellProps) {
       <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-7xl px-4 py-6 outline-none sm:px-6 lg:px-8 lg:py-8">
         {/*
           Transición entre pantallas. El shell vive en el layout de (portal), así que este límite
-          persiste: cada navegación, carga (Suspense) o refresco que cambia el contenido es un "update"
-          con fundido corto. Las secciones de una pantalla recién montada además suben escalonadas.
+          persiste. Solo las navegaciones con tipo "navegacion" (lib/transiciones) funden el
+          contenido; refrescos, filtros, orden y cargas tras el esqueleto son silenciosos.
         */}
-        <ViewTransition update="pagina" default="none">
-          <div className="entrada-pagina">{children}</div>
+        <ViewTransition update={{ navegacion: 'pagina', default: 'none' }} default="none">
+          <div>{children}</div>
         </ViewTransition>
       </main>
     </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { traducirErrorInterno } from '@/lib/lotes'
@@ -35,29 +35,36 @@ interface RevisionFormProps {
   fases: Fase[]
 }
 
-function leerAviso(): string {
+/** Lee y borra el aviso; solo lo devuelve si iba dirigido a esta causa (si no, se descarta). */
+function leerAviso(causa: string): string {
   try {
-    const aviso = sessionStorage.getItem(CLAVE_AVISO) ?? ''
+    const crudo = sessionStorage.getItem(CLAVE_AVISO)
     sessionStorage.removeItem(CLAVE_AVISO)
-    return aviso
+    if (!crudo) return ''
+    const { texto, destino } = JSON.parse(crudo) as { texto?: unknown; destino?: unknown }
+    return destino === causa && typeof texto === 'string' ? texto : ''
   } catch {
     return ''
   }
 }
 
-function guardarAviso(texto: string) {
+function guardarAviso(texto: string, destino: string) {
   try {
-    sessionStorage.setItem(CLAVE_AVISO, texto)
+    sessionStorage.setItem(CLAVE_AVISO, JSON.stringify({ texto, destino }))
   } catch {
     // Sin almacenamiento (modo privado): se navega igual, solo sin el aviso.
   }
 }
 
+// Campos donde las teclas 1–4 se escriben, no eligen decisión.
+const SELECTOR_CAMPO =
+  'input:not([type="radio"]):not([type="checkbox"]):not([type="button"]):not([type="submit"]), textarea, select, [contenteditable="true"]'
+
 /**
  * Revisión humana de la clasificación propuesta por la IA, pensada para revisar en serie:
- * muestra "3 de 12", permite "Guardar y siguiente" y tiene atajos (1–4 eligen la decisión,
- * Ctrl+Enter guarda y pasa a la siguiente). Los atajos no actúan mientras se escribe en un campo,
- * salvo Ctrl+Enter.
+ * muestra "3 de 12", permite "Guardar y siguiente" y tiene atajos. Las teclas 1–4 eligen la
+ * decisión solo con el foco dentro del formulario y fuera de campos de texto (WCAG 2.1.4);
+ * Ctrl+Enter guarda desde cualquier punto de la página.
  */
 export default function RevisionForm({ auditoriaId, causa, cola, permiteAceptarIA, etapas, fases }: RevisionFormProps) {
   const router = useRouter()
@@ -70,6 +77,8 @@ export default function RevisionForm({ auditoriaId, causa, cola, permiteAceptarI
   const [errores, setErrores] = useState<Partial<Record<Campo, string>>>({})
   const [errorGeneral, setErrorGeneral] = useState('')
   const [confirmacion, setConfirmacion] = useState('')
+  // Aviso que deja la revisión anterior al usar "Guardar y siguiente": va en la fila del contador.
+  const [avisoAnterior, setAvisoAnterior] = useState('')
   const [enviando, setEnviando] = useState<false | 'guardar' | 'siguiente'>(false)
   const siguienteRef = useRef(false)
 
@@ -77,42 +86,50 @@ export default function RevisionForm({ auditoriaId, causa, cola, permiteAceptarI
   const fasesDeEtapa = etapa ? fases.filter((f) => f.eta_id === Number(etapa)) : []
   const haySiguiente = Boolean(cola?.siguiente)
 
+  function enfocarPrimeraDecision() {
+    document.querySelector<HTMLInputElement>(`input[name="${id}-decision"]:not(:disabled)`)?.focus()
+  }
+
   // Aviso de la revisión anterior (viene de "Guardar y siguiente"). Se lee tras montar: el servidor
-  // no tiene sessionStorage. Leerlo dentro del temporizador evita perderlo con el doble montaje de desarrollo.
+  // no tiene sessionStorage. Leerlo dentro del temporizador evita perderlo con el doble montaje de
+  // desarrollo. Al llegar desde la revisión anterior, el foco va a la primera decisión.
   useEffect(() => {
     const t = setTimeout(() => {
-      const aviso = leerAviso()
-      if (aviso) setConfirmacion(aviso)
+      const aviso = leerAviso(causa)
+      if (!aviso) return
+      setAvisoAnterior(aviso)
+      enfocarPrimeraDecision()
     }, 0)
     return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar
   }, [])
 
-  // Atajos de teclado del flujo de revisión.
+  // Ctrl+Enter: guardar desde cualquier punto de la página (lleva modificador, no choca con 2.1.4).
   useEffect(() => {
-    function alTeclear(e: KeyboardEvent) {
-      if (enviando) return
-      const enCampo = e.target instanceof HTMLElement && e.target.closest('input[type="text"], input[type="search"], textarea, select, dialog[open]')
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-        if (e.target instanceof HTMLElement && e.target.closest('dialog[open]')) return
-        e.preventDefault()
-        siguienteRef.current = haySiguiente
-        formulario.current?.requestSubmit()
-        return
-      }
-      if (enCampo || e.ctrlKey || e.metaKey || e.altKey) return
-      const n = Number(e.key)
-      if (Number.isInteger(n) && n >= 1 && n <= DECISIONES_REVISION.length) {
-        const d = DECISIONES_REVISION[n - 1]
-        if (d === 'ACEPTAR_IA' && !permiteAceptarIA) return
-        e.preventDefault()
-        setDecision(d)
-        setErrores((prev) => ({ ...prev, decision: undefined }))
-        document.querySelector<HTMLInputElement>(`input[name="${id}-decision"][value="${d}"]`)?.focus()
-      }
+    function alTeclear(e: globalThis.KeyboardEvent) {
+      if (enviando || e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return
+      if (e.target instanceof HTMLElement && e.target.closest('dialog[open]')) return
+      e.preventDefault()
+      siguienteRef.current = haySiguiente
+      formulario.current?.requestSubmit()
     }
     document.addEventListener('keydown', alTeclear)
     return () => document.removeEventListener('keydown', alTeclear)
-  }, [enviando, haySiguiente, permiteAceptarIA, id])
+  }, [enviando, haySiguiente])
+
+  // 1–4: solo con el foco dentro del formulario y fuera de campos de texto.
+  function alTeclearFormulario(e: KeyboardEvent<HTMLFormElement>) {
+    if (enviando || e.ctrlKey || e.metaKey || e.altKey) return
+    if (e.target instanceof HTMLElement && e.target.closest(SELECTOR_CAMPO)) return
+    const n = Number(e.key)
+    if (!Number.isInteger(n) || n < 1 || n > DECISIONES_REVISION.length) return
+    const d = DECISIONES_REVISION[n - 1]
+    if (d === 'ACEPTAR_IA' && !permiteAceptarIA) return
+    e.preventDefault()
+    setDecision(d)
+    setErrores((prev) => ({ ...prev, decision: undefined }))
+    document.querySelector<HTMLInputElement>(`input[name="${id}-decision"][value="${d}"]`)?.focus()
+  }
 
   function validar(): Partial<Record<Campo, string>> {
     const e: Partial<Record<Campo, string>> = {}
@@ -172,7 +189,7 @@ export default function RevisionForm({ auditoriaId, causa, cola, permiteAceptarI
 
     const pospuesta = data === 'PENDIENTE'
     if (irASiguiente && cola?.siguiente) {
-      guardarAviso(`${pospuesta ? 'Pospusiste' : 'Registraste'} la revisión de ${causa}. Esta es la siguiente pendiente.`)
+      guardarAviso(`${pospuesta ? 'Pospuesta' : 'Registrada'}: ${causa}`, cola.siguiente)
       router.push(`/casos/${encodeURIComponent(cola.siguiente)}`)
       return
     }
@@ -182,6 +199,8 @@ export default function RevisionForm({ auditoriaId, causa, cola, permiteAceptarI
     setEtapa('')
     setFase('')
     setObservacion('')
+    // El botón pulsado puede desaparecer al refrescar: el foco vuelve a la primera decisión.
+    enfocarPrimeraDecision()
     router.refresh()
   }
 
@@ -190,14 +209,19 @@ export default function RevisionForm({ auditoriaId, causa, cola, permiteAceptarI
   return (
     <div className="space-y-4">
       {cola && cola.total > 0 ? (
-        <div className="flex items-center justify-between gap-3 text-xs text-muted">
+        <div className="flex min-h-5 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted">
+          {/* Aviso de la revisión anterior en la misma fila: no desplaza el formulario. */}
+          <span role="status" className="w-full font-medium text-exito-fg empty:hidden">
+            {avisoAnterior ? `✓ ${avisoAnterior}. Esta es la siguiente pendiente.` : ''}
+          </span>
           <span className="tabular-nums">
             {cola.posicion ? (
               <>
-                Revisión <span className="font-semibold text-fg">{cola.posicion}</span> de {cola.total} pendientes
+                Revisión <span className="font-semibold text-fg">{cola.posicion}</span> de {cola.total}{' '}
+                {cola.total === 1 ? 'pendiente' : 'pendientes'}
               </>
             ) : (
-              <>{cola.total} pendientes</>
+              <>{cola.total === 1 ? '1 pendiente' : `${cola.total} pendientes`}</>
             )}
           </span>
           {cola.total > 1 ? (
@@ -211,14 +235,10 @@ export default function RevisionForm({ auditoriaId, causa, cola, permiteAceptarI
         </div>
       ) : null}
 
-      {confirmacion && (
-        <div className="animate-subir">
-          <Alert tono="exito" rol="status">
-            {confirmacion}
-          </Alert>
-        </div>
-      )}
-      <form ref={formulario} onSubmit={enviar} className="space-y-4" noValidate>
+      <div role="status">
+        {confirmacion ? <Alert tono="exito">{confirmacion}</Alert> : null}
+      </div>
+      <form ref={formulario} onSubmit={enviar} onKeyDown={alTeclearFormulario} className="space-y-4" noValidate>
         {errorGeneral && (
           <div className="animate-subir">
             <Alert tono="peligro" rol="alert">
@@ -265,7 +285,7 @@ export default function RevisionForm({ auditoriaId, causa, cola, permiteAceptarI
         </fieldset>
 
         {corrigiendo && (
-          <fieldset className="animate-subir space-y-4">
+          <fieldset className="space-y-4">
             <legend className="text-sm font-semibold text-fg">Corrección manual</legend>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>

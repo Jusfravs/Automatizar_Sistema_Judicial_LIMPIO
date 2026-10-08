@@ -22,6 +22,11 @@ export type ValoresFiltro = {
 // Texto: espera breve para no consultar en cada tecla. Selects y casilla: inmediato.
 const ESPERA_TEXTO_MS = 300
 
+/** Lo que realmente viaja en la URL: sirve para comparar sin perder espacios que se están escribiendo. */
+function normalizar(v: ValoresFiltro): ValoresFiltro {
+  return { ...v, q: v.q.trim(), ciudad: v.ciudad.trim() }
+}
+
 function construirUrl(ruta: string, v: ValoresFiltro): string {
   const sp = new URLSearchParams()
   if (v.q.trim()) sp.set('q', v.q.trim())
@@ -59,10 +64,13 @@ export function FiltrosCasos({
   const [pendiente, iniciarTransicion] = useTransition()
   const [valores, setValores] = useState(iniciales)
   const espera = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const campoCausa = useRef<HTMLInputElement>(null)
+  const montado = useRef(false)
 
   // Si los filtros confirmados cambian desde fuera (chip "quitar", Limpiar, atrás), se adoptan.
-  // Si es el eco de lo que acabamos de pedir, los valores locales ya coinciden o van por delante.
-  const firmaInicial = JSON.stringify(iniciales)
+  // Si es el eco de lo que acabamos de pedir, los valores locales ya coinciden o van por delante
+  // (se compara normalizado: "San " y "San" son la misma petición).
+  const firmaInicial = JSON.stringify(normalizar(iniciales))
   const [firmaVista, setFirmaVista] = useState(firmaInicial)
   const [firmaPedida, setFirmaPedida] = useState(firmaInicial)
   if (firmaInicial !== firmaVista) {
@@ -77,10 +85,22 @@ export function FiltrosCasos({
     if (espera.current) clearTimeout(espera.current)
   }, [])
 
+  // Al quitar un chip o limpiar, el control pulsado desaparece y el foco caería en <body>:
+  // se lleva al campo de causa (nunca en la carga inicial ni mientras se escribe en otro control).
+  useEffect(() => {
+    if (!montado.current) {
+      montado.current = true
+      return
+    }
+    if (document.activeElement === document.body || document.activeElement === null) {
+      campoCausa.current?.focus({ preventScroll: true })
+    }
+  }, [firmaInicial])
+
   function aplicar(v: ValoresFiltro) {
     if (espera.current) clearTimeout(espera.current)
     espera.current = null
-    setFirmaPedida(JSON.stringify(v))
+    setFirmaPedida(JSON.stringify(normalizar(v)))
     iniciarTransicion(() => router.replace(construirUrl(ruta, v), { scroll: false }))
   }
 
@@ -109,6 +129,7 @@ export function FiltrosCasos({
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Número de causa" htmlFor="q">
             <Input
+              ref={campoCausa}
               id="q"
               name="q"
               type="search"
@@ -165,9 +186,8 @@ export function FiltrosCasos({
           />
           {valores.orden ? <input type="hidden" name="orden" value={valores.orden} /> : null}
           <div className="flex items-center gap-3 sm:ml-auto">
-            <span aria-live="polite" className="text-xs text-muted">
-              {pendiente ? 'Actualizando resultados…' : ''}
-            </span>
+            {/* Sin región viva: el recuento de resultados ya se anuncia al terminar. */}
+            <span className="text-xs text-muted">{pendiente ? 'Actualizando resultados…' : ''}</span>
             {/* Sin JavaScript, el formulario se envía con este botón; con JavaScript los filtros se aplican solos. */}
             <noscript>
               <button type="submit" className={clasesBoton({ tamano: 'sm' })}>
@@ -192,13 +212,14 @@ export function FiltrosCasos({
             pendiente ? 'opacity-100 delay-150' : 'opacity-0',
           )}
         >
-          <div className="h-full w-1/3 rounded-full bg-primary animate-barrido" />
+          <div className={cx('h-full w-1/3 rounded-full bg-primary animate-barrido', !pendiente && '[animation-play-state:paused]')} />
         </div>
         <div
           className={cx(
             'transition-opacity duration-(--duracion-base) ease-salida',
             // Atenuar solo si la espera se nota (>150 ms): las respuestas rápidas no parpadean.
-            pendiente && 'opacity-55 delay-150',
+            // 70 %: el texto secundario atenuado sigue legible (~3,9:1).
+            pendiente && 'opacity-70 delay-150',
           )}
         >
           {children}

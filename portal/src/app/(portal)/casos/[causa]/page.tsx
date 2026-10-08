@@ -210,7 +210,7 @@ export default async function CasoPage({ params, searchParams }: Props) {
               ) : actuaciones.length === 0 ? (
                 <p className="text-sm text-muted">Esta causa no tiene actuaciones en esta página.</p>
               ) : (
-                <ol className="entrada-escalonada space-y-0">
+                <ol className="space-y-0">
                   {actuaciones.map((a) => {
                     const esEvidencia = evidencias.has(a.actuacion_id)
                     return (
@@ -252,7 +252,8 @@ export default async function CasoPage({ params, searchParams }: Props) {
           </Card>
         </div>
 
-        <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
+        {/* Si es más alta que la pantalla, desplaza por dentro: "Guardar y siguiente" siempre alcanzable. */}
+        <div className="space-y-6 lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:self-start lg:overflow-y-auto lg:overscroll-contain lg:p-1 lg:-m-1">
           <Card>
             <CardHeader
               titulo="Auditoría de IA"

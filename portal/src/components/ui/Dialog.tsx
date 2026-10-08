@@ -16,6 +16,8 @@ export type DialogProps = {
   acciones?: ReactNode
   /** "amplio" para contenido con listas (p. ej. el buscador). */
   ancho?: 'normal' | 'amplio'
+  /** false para paletas que se abren por teclado (Ctrl+K): deben aparecer al instante. */
+  animado?: boolean
   className?: string
 }
 
@@ -32,11 +34,13 @@ export function Dialog({
   children,
   acciones,
   ancho = 'normal',
+  animado = true,
   className,
 }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
   const disparador = useRef<HTMLElement | null>(null)
   const cierrePorProp = useRef(false)
+  const pulsacionEnTelon = useRef(false)
   const alCerrarRef = useRef(alCerrar)
   const tituloId = useId()
   const descripcionId = useId()
@@ -78,14 +82,19 @@ export function Dialog({
         e.preventDefault()
         alCerrarRef.current()
       }}
+      onPointerDown={(e) => {
+        pulsacionEnTelon.current = e.target === e.currentTarget
+      }}
       onClick={(e) => {
-        // El <dialog> solo recibe el clic directo en el margen exterior (el telón visible).
-        if (e.target === e.currentTarget) alCerrarRef.current()
+        // El <dialog> solo recibe el clic directo en el margen exterior (el telón visible). Si el
+        // gesto empezó dentro (p. ej. seleccionar texto y soltar fuera), no se cierra.
+        if (e.target === e.currentTarget && pulsacionEnTelon.current) alCerrarRef.current()
+        pulsacionEnTelon.current = false
       }}
       className={cx(
         'm-auto w-full bg-transparent p-4 text-fg backdrop:bg-velo',
         ancho === 'amplio' ? 'max-w-xl' : 'max-w-lg',
-        'dialogo-animado',
+        animado && 'dialogo-animado',
         className,
       )}
     >

@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import { ViewTransition } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import {
   Alert,
@@ -15,6 +14,7 @@ import { IconoCerrar } from '@/components/ui/iconos'
 import { FOCO } from '@/components/ui/estilos'
 import { NumeroCausaCompartido } from '@/components/NumeroCausa'
 import { cx } from '@/lib/cx'
+import { NAVEGACION } from '@/lib/transiciones'
 import { formatFecha, formatFechaProcesal } from '@/lib/fechas'
 import {
   CASOS_POR_PAGINA,
@@ -27,6 +27,7 @@ import {
   type ExpedienteLista,
 } from '@/lib/casos'
 import { FiltrosCasos } from './FiltrosCasos'
+import { FlechaOrden } from './FlechaOrden'
 
 type SearchParams = Record<string, string | string[] | undefined>
 
@@ -146,10 +147,15 @@ function Chip({ texto, href }: { texto: string; href: string }) {
       className={`inline-flex items-center gap-1.5 rounded-full border border-subtle bg-surface px-3 py-1 text-sm text-fg transition-colors hover:bg-surface-2 ${FOCO}`}
     >
       {texto}
-      <IconoCerrar className="size-3.5 text-muted" />
+      <IconoCerrar className="size-3.5 shrink-0 text-muted" />
       <span className="sr-only">(quitar filtro)</span>
     </Link>
   )
+}
+
+/** Dirección que muestra la flecha: la actual si la columna está activa. */
+function siguienteAscendente(activa: boolean, f: Filtros, clave: ClaveOrden): boolean {
+  return activa ? f.orden.dir === 'asc' : ORDENABLES[clave].inicial === 'asc'
 }
 
 /** Cabecera ordenable: enlace que alterna la dirección; la flecha y aria-sort dicen el estado. */
@@ -169,17 +175,7 @@ function EncabezadoOrden({ etiqueta, clave, f }: { etiqueta: string; clave: Clav
       )}
     >
       {etiqueta}
-      <svg
-        viewBox="0 0 12 12"
-        aria-hidden="true"
-        className={cx(
-          'size-3 transition-[opacity,rotate] duration-(--duracion-base) ease-salida',
-          activa ? 'opacity-100' : 'opacity-0 group-hover/orden:opacity-60',
-          activa && f.orden.dir === 'asc' && 'rotate-180',
-        )}
-      >
-        <path d="M6 9.5 2.5 5h7z" fill="currentColor" />
-      </svg>
+      <FlechaOrden activa={activa} ascendente={siguienteAscendente(activa, f, clave)} />
       <span className="sr-only">
         {activa ? `, orden ${f.orden.dir === 'asc' ? 'ascendente' : 'descendente'}; cambiar` : ', ordenar'}
       </span>
@@ -194,11 +190,13 @@ function columnas(f: Filtros): Columna<ExpedienteLista>[] {
     {
       clave: 'causa',
       encabezado: <EncabezadoOrden etiqueta="Número de causa" clave="causa" f={f} />,
+      etiqueta: 'Número de causa',
       orden: orden('causa'),
       principal: true,
       celda: (c, vista) => (
         <Link
           href={`/casos/${encodeURIComponent(c.numero_causa)}`}
+          transitionTypes={NAVEGACION}
           className={`whitespace-nowrap rounded-sm font-mono text-sm font-medium text-fg underline-offset-2 transition-colors hover:text-primary hover:underline ${FOCO}`}
         >
           {/* Solo en la tabla: el nombre de la transición debe ser único en la página. */}
@@ -213,6 +211,7 @@ function columnas(f: Filtros): Columna<ExpedienteLista>[] {
     {
       clave: 'estado',
       encabezado: <EncabezadoOrden etiqueta="Estado" clave="estado" f={f} />,
+      etiqueta: 'Estado',
       orden: orden('estado'),
       celda: (c) => (c.estado ? <EstadoBadge tipo="caso" estado={c.estado} /> : <span className="text-muted">—</span>),
     },
@@ -220,6 +219,7 @@ function columnas(f: Filtros): Columna<ExpedienteLista>[] {
     {
       clave: 'fase',
       encabezado: <EncabezadoOrden etiqueta="Etapa y fase actual" clave="fase" f={f} />,
+      etiqueta: 'Etapa y fase actual',
       orden: orden('fase'),
       celda: (c) => (
         <div className="min-w-0 text-sm">
@@ -231,6 +231,7 @@ function columnas(f: Filtros): Columna<ExpedienteLista>[] {
     {
       clave: 'inicio',
       encabezado: <EncabezadoOrden etiqueta="Inicio fase actual" clave="inicio" f={f} />,
+      etiqueta: 'Inicio fase actual',
       orden: orden('inicio'),
       ocultarEnMovil: true,
       celda: (c) => <span className="text-sm tabular-nums text-muted">{formatFechaProcesal(c.fecha_inicio_fase_actual)}</span>,
@@ -238,6 +239,7 @@ function columnas(f: Filtros): Columna<ExpedienteLista>[] {
     {
       clave: 'actualizado',
       encabezado: <EncabezadoOrden etiqueta="Actualizado" clave="actualizado" f={f} />,
+      etiqueta: 'Actualizado',
       orden: orden('actualizado'),
       ocultarEnMovil: true,
       celda: (c) => <span className="text-sm tabular-nums text-muted">{formatFecha(c.actualizado_en)}</span>,
@@ -286,15 +288,14 @@ export default async function CasosPage({ searchParams }: { searchParams: Promis
         hayFiltros={chips.length > 0}
       >
         <div className="space-y-4">
-          {/* Contenedor siempre montado: así cada chip puede entrar y salir con su propia transición. */}
-          <div hidden={chips.length === 0} className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted">Filtros activos:</span>
-            {chips.map((c) => (
-              <ViewTransition key={c.clave}>
-                <Chip texto={c.texto} href={c.href} />
-              </ViewTransition>
-            ))}
-          </div>
+          {chips.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted">Filtros activos:</span>
+              {chips.map((c) => (
+                <Chip key={c.clave} texto={c.texto} href={c.href} />
+              ))}
+            </div>
+          ) : null}
 
           {error ? (
             <Alert tono="peligro" rol="alert">

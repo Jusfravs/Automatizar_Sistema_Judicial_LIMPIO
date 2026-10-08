@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, FormEvent } from 'react'
+import { useEffect, useRef, useState, FormEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { inicioPorRol } from '@/lib/roles'
@@ -16,6 +16,13 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // Cada error nuevo mueve el foco al aviso: el foco no queda perdido en <body>.
+  const [intentoFallido, setIntentoFallido] = useState(0)
+  const aviso = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (intentoFallido > 0) aviso.current?.focus()
+  }, [intentoFallido])
   const router = useRouter()
   const supabase = createClient()
 
@@ -30,15 +37,17 @@ export default function LoginPage() {
     })
 
     if (signInError) {
-      setError('Credenciales inválidas')
+      setError('El correo o la contraseña no son correctos. Revísalos e inténtalo de nuevo.')
       setLoading(false)
+      setIntentoFallido((n) => n + 1)
       return
     }
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
-      setError('No se pudo obtener el usuario')
+      setError('No se pudo comprobar tu cuenta. Inténtalo de nuevo en unos segundos.')
       setLoading(false)
+      setIntentoFallido((n) => n + 1)
       return
     }
 
@@ -117,6 +126,8 @@ export default function LoginPage() {
               <Field label="Correo electrónico" htmlFor="email">
                 <Input
                   {...a11yCampo('email', {})}
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? 'error-login' : undefined}
                   type="email"
                   autoComplete="email"
                   required
@@ -130,6 +141,8 @@ export default function LoginPage() {
                 <div className="relative">
                   <Input
                     {...a11yCampo('password', {})}
+                    aria-invalid={error ? true : undefined}
+                    aria-describedby={error ? 'error-login' : undefined}
                     type={showPassword ? 'text' : 'password'}
                     autoComplete="current-password"
                     required
@@ -144,16 +157,17 @@ export default function LoginPage() {
                     tamano="sm"
                     onClick={togglePassword}
                     aria-pressed={showPassword}
+                    aria-label="Mostrar contraseña"
                     aria-controls="password"
                     className="absolute right-1 top-1/2 -translate-y-1/2"
                   >
-                    {showPassword ? 'Ocultar' : 'Mostrar'}
+                    Mostrar
                   </Button>
                 </div>
               </Field>
 
               {error && (
-                <div className="animate-subir">
+                <div ref={aviso} id="error-login" tabIndex={-1} className="animate-subir rounded-tarjeta outline-none">
                   <Alert tono="peligro" rol="alert">
                     {error}
                   </Alert>

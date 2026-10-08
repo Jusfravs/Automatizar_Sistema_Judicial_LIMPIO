@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { cx } from '@/lib/cx'
+import { NAVEGACION } from '@/lib/transiciones'
 import { FOCO } from './estilos'
 
 export type Miga = { etiqueta: string; href?: string }
@@ -30,6 +31,7 @@ export function PageHeader({ titulo, descripcion, acciones, migas, tituloMono = 
                   {miga.href && !ultima ? (
                     <Link
                       href={miga.href}
+                      transitionTypes={NAVEGACION}
                       className={cx('rounded-control underline-offset-4 transition-colors hover:text-fg hover:underline', FOCO)}
                     >
                       {miga.etiqueta}
@@ -49,7 +51,7 @@ export function PageHeader({ titulo, descripcion, acciones, migas, tituloMono = 
         <div className="min-w-0 space-y-1">
           <h1
             className={cx(
-              'text-titulo font-semibold text-fg text-balance',
+              'text-titulo font-semibold text-fg text-balance [overflow-wrap:anywhere]',
               tituloMono ? 'font-mono tracking-tight' : 'font-serif',
             )}
           >

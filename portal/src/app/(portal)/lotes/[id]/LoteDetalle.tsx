@@ -12,6 +12,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { EstadoBadge } from '@/components/ui/EstadoBadge'
 import { LineaTiempo, type Paso } from '@/components/ui/LineaTiempo'
 import { NumeroAnimado } from '@/components/ui/NumeroAnimado'
+import { useHidratado } from '@/lib/hidratado'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { cx } from '@/lib/cx'
@@ -42,6 +43,8 @@ interface LoteDetalleProps {
 }
 
 export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, avisoServidor }: LoteDetalleProps) {
+  // Los avisos que aparecen después de cargar abren su espacio con movimiento.
+  const despliegue = useHidratado() ? 'despliegue' : undefined
   const [actual, setActual] = useState<SolicitudDetalle>(solicitud)
   const [estado, setEstado] = useState<EstadoEjecucion | null>(estadoEjecucion)
   const [cola, setCola] = useState<ColaError[]>(colaErrores)
@@ -244,23 +247,23 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
         acciones={actual.resultado_ruta || puedeCancelar ? acciones : undefined}
       />
 
-      {/* .despliegue: cada aviso abre su espacio con movimiento en vez de empujar el contenido de golpe. */}
+      {/* .despliegue solo tras hidratar: los avisos que ya estaban al cargar no se animan. */}
       {downloadError && (
-        <div className="despliegue">
+        <div className={despliegue}>
           <Alert tono="peligro" rol="alert">
             {downloadError}
           </Alert>
         </div>
       )}
       {esActivo && actual.cancelar && (
-        <div className="despliegue">
+        <div className={despliegue}>
           <Alert tono="info" rol="status">
             Cancelación solicitada. El servicio detendrá el lote en breve.
           </Alert>
         </div>
       )}
       {avisoServidor && esActivo && !actual.tomado_en && (
-        <div className="despliegue">
+        <div className={despliegue}>
           <Alert tono="peligro" rol="alert" titulo="Este lote no avanzará por ahora">
             El servidor de procesamiento no responde ({avisoServidor.toLowerCase()}). El lote se tomará solo en cuanto el servicio
             vuelva a estar activo; no hace falta crearlo de nuevo.
@@ -268,7 +271,7 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
         </div>
       )}
       {refreshError && (
-        <div className="despliegue">
+        <div className={despliegue}>
           <Alert tono="atencion" rol="status">
             No se pudo actualizar el avance. Se reintentará automáticamente.
           </Alert>
@@ -289,7 +292,7 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
         </div>
       )}
       {actual.mensaje && (
-        <div className="despliegue">
+        <div className={despliegue}>
           <Alert tono={fallido ? 'peligro' : 'info'} titulo="Mensaje del servicio">
             {actual.mensaje}
           </Alert>

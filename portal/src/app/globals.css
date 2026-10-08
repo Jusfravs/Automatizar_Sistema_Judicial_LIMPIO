@@ -31,11 +31,7 @@
   --duracion-lenta: 240ms; /* modales, paneles */
   --curva-salida: cubic-bezier(0.23, 1, 0.32, 1); /* entradas e interacción */
   --curva-movimiento: cubic-bezier(0.77, 0, 0.175, 1); /* desplazamiento en pantalla */
-  /* Muelle casi crítico (1 % de rebote): indicadores que se desplazan y elementos que se asientan.
-     Generado con zeta 0.82; pensado para 360ms. Es física sutil, no rebote decorativo. */
-  --curva-muelle: linear(0, 0.035, 0.118, 0.227, 0.345, 0.461, 0.568, 0.663, 0.745, 0.812, 0.866, 0.909, 0.942, 0.966, 0.983, 0.995, 1.003, 1.008, 1.01, 1.011, 1.011, 1.01, 1.009, 1.008, 1);
-  --duracion-movimiento: 360ms; /* morph de elementos compartidos, indicador de navegación */
-  --duracion-pagina: 200ms; /* fundido entre pantallas */
+  --duracion-pagina: 200ms; /* fundido entre pantallas (solo navegación explícita) */
   --escalon: 40ms; /* retraso entre elementos de una entrada escalonada */
 
   /* Capas de apilamiento */
@@ -358,11 +354,12 @@
   /* Movimiento: ease-salida / ease-movimiento; duración vía duration-(--duracion-base) */
   --ease-salida: var(--curva-salida);
   --ease-movimiento: var(--curva-movimiento);
-  --ease-muelle: var(--curva-muelle);
-  --animate-aparecer: aparecer var(--duracion-lenta) var(--curva-salida) both;
-  --animate-subir: subir var(--duracion-lenta) var(--curva-salida) both;
-  --animate-latido: latido 2s var(--curva-salida) infinite;
-  --animate-barrido: barrido 1.1s var(--curva-movimiento) infinite;
+  --animate-aparecer: aparecer var(--duracion-lenta) var(--curva-salida) backwards;
+  --animate-subir: subir var(--duracion-lenta) var(--curva-salida) backwards;
+  /* Una onda por latido real (el componente la reinicia con key), no un pulso infinito. */
+  --animate-latido: latido 1.2s var(--curva-salida) forwards;
+  /* Progreso continuo: linear es la excepción correcta. */
+  --animate-barrido: barrido 1.2s linear infinite;
   --default-transition-duration: var(--duracion-rapida);
   --default-transition-timing-function: var(--curva-salida);
 }
@@ -374,10 +371,14 @@ body {
   font-optical-sizing: auto;
 }
 
-/* ---------- 4. Movimiento ---------- */
+/* ---------- 4. Movimiento (docs/system.md, sección 3) ---------- */
 
 @keyframes aparecer {
   from { opacity: 0; }
+}
+
+@keyframes desvanecer {
+  to { opacity: 0; }
 }
 
 @keyframes subir {
@@ -387,49 +388,57 @@ body {
 /* Onda que sale del punto de estado "vivo" (servidor activo). Solo opacidad y escala. */
 @keyframes latido {
   0% { opacity: 0.55; scale: 1; }
-  70%, 100% { opacity: 0; scale: 2.4; }
+  100% { opacity: 0; scale: 2.4; }
 }
 
-/* Barra indeterminada fina: "cargando sin porcentaje". */
+/* Barra indeterminada fina: "cargando sin porcentaje". Recorre el ancho completo y sale entera. */
 @keyframes barrido {
   from { translate: -100% 0; }
-  to { translate: 250% 0; }
+  to { translate: 300% 0; }
 }
 
 /*
- * Entrada escalonada: los elementos aparecen subiendo 6px, uno tras otro (máx. 6 escalones).
- * .entrada-escalonada anima a sus hijos; .entrada-pagina (en AppShell) anima las secciones de cada
- * pantalla, es decir, los hijos de la raíz de la página.
- * Solo corre al montar: un refresco de datos no la repite porque React conserva los nodos.
+ * Entrada escalonada: los hijos aparecen subiendo 6px, uno tras otro (máx. 6 escalones).
+ * Solo para vistas que se ven una vez por sesión (login), nunca en navegación repetida ni en
+ * listas que se paginan.
  */
-.entrada-escalonada > *,
-.entrada-pagina > * > * {
+.entrada-escalonada > * {
   animation: var(--animate-subir);
 }
-.entrada-escalonada > :nth-child(2), .entrada-pagina > * > :nth-child(2) { animation-delay: calc(var(--escalon) * 1); }
-.entrada-escalonada > :nth-child(3), .entrada-pagina > * > :nth-child(3) { animation-delay: calc(var(--escalon) * 2); }
-.entrada-escalonada > :nth-child(4), .entrada-pagina > * > :nth-child(4) { animation-delay: calc(var(--escalon) * 3); }
-.entrada-escalonada > :nth-child(5), .entrada-pagina > * > :nth-child(5) { animation-delay: calc(var(--escalon) * 4); }
-.entrada-escalonada > :nth-child(n + 6), .entrada-pagina > * > :nth-child(n + 6) { animation-delay: calc(var(--escalon) * 5); }
+.entrada-escalonada > :nth-child(2) { animation-delay: calc(var(--escalon) * 1); }
+.entrada-escalonada > :nth-child(3) { animation-delay: calc(var(--escalon) * 2); }
+.entrada-escalonada > :nth-child(4) { animation-delay: calc(var(--escalon) * 3); }
+.entrada-escalonada > :nth-child(5) { animation-delay: calc(var(--escalon) * 4); }
+.entrada-escalonada > :nth-child(n + 6) { animation-delay: calc(var(--escalon) * 5); }
 
 /*
- * Modal nativo con entrada y salida. allow-discrete deja que display/overlay cambien al final
- * de la salida, así el cierre también se anima. Salida más corta que la entrada.
+ * Modal nativo con entrada y salida (más corta). La salida necesita la propiedad `overlay`
+ * (allow-discrete): donde no existe, el cierre es inmediato en vez de saltar fuera de la capa
+ * superior. Las paletas que se abren por teclado (buscador) usan Dialog sin esta clase.
  */
 .dialogo-animado,
 .dialogo-animado::backdrop {
-  transition-property: opacity, scale, display, overlay;
-  transition-behavior: allow-discrete;
-  transition-duration: var(--duracion-base);
+  transition-property: opacity, scale;
+  transition-duration: var(--duracion-lenta);
   transition-timing-function: var(--curva-salida);
 }
-.dialogo-animado { opacity: 0; scale: 0.97; }
-.dialogo-animado::backdrop { opacity: 0; }
-.dialogo-animado[open] { opacity: 1; scale: 1; transition-duration: var(--duracion-lenta); }
-.dialogo-animado[open]::backdrop { opacity: 1; transition-duration: var(--duracion-lenta); }
+.dialogo-animado[open] { opacity: 1; scale: 1; }
+.dialogo-animado[open]::backdrop { opacity: 1; }
 @starting-style {
   .dialogo-animado[open] { opacity: 0; scale: 0.97; }
   .dialogo-animado[open]::backdrop { opacity: 0; }
+}
+@supports (overlay: auto) {
+  .dialogo-animado,
+  .dialogo-animado::backdrop {
+    transition-property: opacity, scale, display, overlay;
+    transition-behavior: allow-discrete;
+    transition-duration: var(--duracion-base);
+  }
+  .dialogo-animado { opacity: 0; scale: 0.97; }
+  .dialogo-animado::backdrop { opacity: 0; }
+  .dialogo-animado[open],
+  .dialogo-animado[open]::backdrop { transition-duration: var(--duracion-lenta); }
 }
 
 /* Panel desplegable que usa el atributo hidden (menú móvil): entra y sale con el mismo gesto. */
@@ -445,27 +454,52 @@ body {
 }
 
 /*
- * View Transitions (React <ViewTransition>). La raíz (barra lateral, cabecera) no se anima:
- * es idéntica entre pantallas. El contenido usa la clase "pagina": la vista saliente se va rápido y
- * la entrante aparece; los elementos nuevos además suben con .entrada-escalonada.
+ * View Transitions (React <ViewTransition>). Solo la navegación explícita (tipo "navegacion")
+ * funde el contenido: refrescos, filtros, orden y cargas tras el esqueleto son silenciosos.
+ * La raíz (barra lateral, cabecera) no se pinta ni bloquea clics durante la transición.
  */
-::view-transition-old(root),
+::view-transition {
+  pointer-events: none;
+}
+::view-transition-old(root) {
+  display: none;
+}
 ::view-transition-new(root) {
   animation: none;
 }
 ::view-transition-group(.pagina) {
   animation-duration: var(--duracion-pagina);
+  animation-timing-function: var(--curva-salida);
 }
+/* La vista vieja se va primero (hacia delante; "reverse" invertiría la curva) y no se mezclan. */
 ::view-transition-old(.pagina) {
-  animation: var(--duracion-rapida) var(--curva-salida) both aparecer reverse;
+  animation: var(--duracion-rapida) var(--curva-salida) both desvanecer;
 }
 ::view-transition-new(.pagina) {
   animation: var(--duracion-pagina) var(--curva-salida) both aparecer;
 }
 
+/* El resaltado de la navegación se desliza al nuevo ítem. Un clic no tiene impulso: sin rebote. */
+::view-transition-group(.indicador) {
+  animation-duration: var(--duracion-lenta);
+  animation-timing-function: var(--curva-salida);
+}
+
+/* Número de causa compartido: la versión nueva (nítida) crece hasta su tamaño; la vieja se va rápido. */
+::view-transition-group(.texto-compartido) {
+  animation-duration: var(--duracion-lenta);
+  animation-timing-function: var(--curva-salida);
+}
+::view-transition-old(.texto-compartido) {
+  animation: var(--duracion-rapida) var(--curva-salida) both desvanecer;
+}
+::view-transition-new(.texto-compartido) {
+  animation: none;
+}
+
 /*
- * Despliegue al aparecer: un aviso que se inserta abre su espacio (altura 0 → auto) en vez de
- * empujar el contenido de golpe. Sin soporte de interpolate-size, aparece con un fundido.
+ * Despliegue al aparecer (excepción documentada: anima height). Un aviso que se inserta DESPUÉS de
+ * cargar la vista abre su espacio en vez de empujar el contenido de golpe. Nunca en listas.
  */
 .despliegue {
   overflow: clip;
@@ -480,8 +514,8 @@ body {
 }
 
 /*
- * Texto plegable ("Ver más"). Sin soporte de calc-size: line-clamp a 3 líneas, cambio inmediato.
- * Con soporte: la altura se interpola entre ~3,5 líneas (con desvanecido inferior) y auto.
+ * Texto plegable ("Ver más"; excepción documentada: anima height). Sin calc-size: line-clamp a 3
+ * líneas y cambio inmediato. Con soporte: altura entre ~3,5 líneas (desvanecido inferior) y auto.
  */
 .texto-plegable[data-plegado="true"] {
   display: -webkit-box;
@@ -504,45 +538,35 @@ body {
   }
 }
 
-/* El indicador de la navegación se desliza al nuevo ítem con el muelle. */
-::view-transition-group(.indicador) {
-  animation-duration: var(--duracion-movimiento);
-  animation-timing-function: var(--curva-muelle);
-}
-
-/* Texto compartido entre pantallas (número de causa): evita el escalado borroso del texto. */
-::view-transition-group(.texto-compartido) {
-  animation-duration: var(--duracion-movimiento);
-  animation-timing-function: var(--curva-movimiento);
-}
-::view-transition-old(.texto-compartido) {
-  display: none;
-}
-::view-transition-new(.texto-compartido) {
-  animation: none;
-  object-fit: none;
-  object-position: left top;
-}
-
+/*
+ * Movimiento reducido: se conserva el fundido (opacidad) y se quita todo desplazamiento.
+ * Los elementos compartidos saltan a su sitio y nada queda oculto esperando un retraso.
+ */
 @media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none !important;
-  }
-
-  /* ::backdrop no lo alcanza el selector universal (revisión de Codex F0-01). */
-  *::backdrop {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
   }
 
   *,
   *::before,
-  *::after {
+  *::after,
+  *::backdrop {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
+  }
+
+  .animate-latido {
+    animation: none !important;
+    opacity: 0;
+  }
+  /* La carga se sigue indicando, sin barrido. */
+  .animate-barrido {
+    animation: none !important;
+    width: 100%;
+    opacity: 0.6;
   }
 }

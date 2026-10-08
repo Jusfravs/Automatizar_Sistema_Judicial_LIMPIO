@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ViewTransition, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import {
   Alert,
@@ -19,6 +19,7 @@ import { formatFecha } from '@/lib/fechas'
 import { leerEstadoServidor } from '@/lib/servidor'
 import { FOCO } from '@/components/ui/estilos'
 import { cx } from '@/lib/cx'
+import { NAVEGACION } from '@/lib/transiciones'
 import type { Tono } from '@/lib/tonos'
 import RefrescoInicio from './RefrescoInicio'
 import { PulsoServidor } from './PulsoServidor'
@@ -77,8 +78,9 @@ function Indicador({
           {senal}
         </div>
         {valor === null ? (
-          <span className="text-display font-semibold tabular-nums text-fg" aria-label="No disponible">
-            —
+          <span className="text-display font-semibold tabular-nums text-fg">
+            <span aria-hidden="true">—</span>
+            <span className="sr-only">No disponible</span>
           </span>
         ) : (
           <NumeroAnimado valor={valor} className="text-display font-semibold text-fg" />
@@ -86,6 +88,7 @@ function Indicador({
         {detalle ? <p className="text-xs text-muted">{detalle}</p> : null}
         <Link
           href={href}
+          transitionTypes={NAVEGACION}
           className={cx(
             'mt-auto inline-flex items-center gap-1 rounded-control text-sm font-medium text-primary',
             // El enlace cubre toda la tarjeta: objetivo grande sin anidar elementos interactivos.
@@ -94,6 +97,8 @@ function Indicador({
           )}
         >
           {enlace}
+          {/* "Ver lotes" se repite: el destino se precisa con la etiqueta de la tarjeta. */}
+          <span className="sr-only">: {etiqueta}</span>
           <span aria-hidden="true" className="transition-transform duration-(--duracion-base) ease-salida group-hover:translate-x-0.5">
             →
           </span>
@@ -182,7 +187,7 @@ async function consultarResumen(supabase: Supabase) {
     lotesEnCurso(supabase, ahora),
     leerEstadoServidor(supabase, ahora),
   ])
-  return { conteos, enCurso, servidor, consultadoEn: new Date(ahora).toISOString() }
+  return { conteos, enCurso, servidor, ahora, consultadoEn: new Date(ahora).toISOString() }
 }
 
 export default async function InicioPage() {
@@ -191,20 +196,25 @@ export default async function InicioPage() {
     conteos: [activos, completados, completadosAntes, pendientes, errorFinal],
     enCurso,
     servidor,
+    ahora,
     consultadoEn,
   } = await consultarResumen(supabase)
 
   const nPendientes = leerConteo('las revisiones pendientes', pendientes)
   const nCompletados = leerConteo('los lotes completados', completados)
   const nCompletadosAntes = leerConteo('los lotes completados la semana anterior', completadosAntes)
-  const nuevoLote = <ButtonLink href="/lotes/nuevo">Nuevo lote</ButtonLink>
+  const nuevoLote = (
+    <ButtonLink href="/lotes/nuevo" transitionTypes={NAVEGACION}>
+      Nuevo lote
+    </ButtonLink>
+  )
 
   return (
     <div className="space-y-6">
       <PageHeader titulo="Inicio" descripcion="Resumen de lotes y revisiones" acciones={nuevoLote} />
 
       <div className="space-y-3">
-        <PulsoServidor inicial={servidor} />
+        <PulsoServidor inicial={servidor} instanteServidor={ahora} />
         <RefrescoInicio consultadoEn={consultadoEn} />
       </div>
 
@@ -243,7 +253,7 @@ export default async function InicioPage() {
         <CardHeader
           titulo="Lotes en curso"
           acciones={
-            <ButtonLink href="/lotes" variante="fantasma" tamano="sm">
+            <ButtonLink href="/lotes" variante="fantasma" tamano="sm" transitionTypes={NAVEGACION}>
               Ver todos
             </ButtonLink>
           }
@@ -265,12 +275,11 @@ export default async function InicioPage() {
                 const activo = ESTADOS_ACTIVOS.includes(lote.estado)
                 const valor = terminado ? 100 : calcularAvance(estado ?? null)
                 return (
-                  // Identidad por lote: al refrescar, los que entran o salen lo hacen con movimiento.
-                  <ViewTransition key={lote.id}>
-                    <li className="space-y-2 py-4 first:pt-0 last:pb-0">
+                  <li key={lote.id} className="space-y-2 py-4 first:pt-0 last:pb-0">
                       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                         <Link
                           href={`/lotes/${lote.id}`}
+                          transitionTypes={NAVEGACION}
                           className={`min-w-0 truncate rounded-control font-medium text-fg underline-offset-2 hover:text-primary hover:underline ${FOCO}`}
                         >
                           {lote.archivo_nombre}
@@ -290,8 +299,7 @@ export default async function InicioPage() {
                           {estado || terminado ? `${valor} %` : 'En espera'}
                         </span>
                       </div>
-                    </li>
-                  </ViewTransition>
+                  </li>
                 )
               })}
             </ul>

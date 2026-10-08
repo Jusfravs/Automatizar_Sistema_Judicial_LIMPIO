@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { NAVEGACION } from '@/lib/transiciones'
 import { createClient } from '@/lib/supabase/server'
 import {
   Alert,
@@ -104,7 +105,7 @@ export default async function LotesPage({
       principal: true,
       celda: (s) => (
         <div className="min-w-0">
-          <Link href={`/lotes/${s.id}`} className={cx('rounded-sm font-medium text-fg underline-offset-2 transition-colors hover:text-primary hover:underline', FOCO)}>
+          <Link href={`/lotes/${s.id}`} transitionTypes={NAVEGACION} className={cx('rounded-sm font-medium text-fg underline-offset-2 transition-colors [overflow-wrap:anywhere] hover:text-primary hover:underline', FOCO)}>
             {s.archivo_nombre}
           </Link>
           <p className="text-xs text-muted">

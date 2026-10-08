@@ -54,7 +54,7 @@ export function LineaTiempo({ pasos, etiqueta, className }: LineaTiempoProps) {
                 aria-hidden="true"
                 className={cx(
                   'absolute left-[7px] top-4 h-[calc(100%-1rem)] w-0.5 sm:left-4 sm:top-[7px] sm:h-0.5 sm:w-[calc(100%-1rem)]',
-                  'transition-colors duration-(--duracion-movimiento)',
+                  'transition-colors duration-(--duracion-lenta)',
                   tramoAlcanzado ? 'bg-exito-solid' : 'bg-(--border-strong)',
                 )}
               />
@@ -62,13 +62,10 @@ export function LineaTiempo({ pasos, etiqueta, className }: LineaTiempoProps) {
             <span
               aria-hidden="true"
               className={cx(
-                'relative z-10 mt-0.5 size-4 shrink-0 rounded-full border-2 transition-colors duration-(--duracion-movimiento) sm:mt-0',
+                'relative z-10 mt-0.5 size-4 shrink-0 rounded-full border-2 transition-colors duration-(--duracion-lenta) sm:mt-0',
                 PUNTO[paso.estado],
               )}
-            >
-              {/* Paso en curso: onda suave de "vivo". */}
-              {paso.estado === 'actual' ? <span className="absolute -inset-0.5 rounded-full bg-progreso-solid animate-latido" /> : null}
-            </span>
+            />
             <div className="min-w-0 space-y-0.5">
               <p
                 className={cx(
