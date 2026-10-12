@@ -2,6 +2,7 @@
 import React, { useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { useHidratado } from '@/lib/hidratado';
 
 // Elementos permitidos, creados una sola vez fuera del render (react-hooks/static-components).
 const ELEMENTOS = { p: motion.p, span: motion.span, div: motion.div } as const;
@@ -22,14 +23,16 @@ function TextShimmerComponent({
   spread = 2,
 }: TextShimmerProps) {
   const MotionComponent = ELEMENTOS[Component];
-  // Portal: con movimiento reducido, texto estático en --muted (sin bucle).
+  // Portal: con movimiento reducido, texto estático en --muted (sin bucle). Hasta hidratar también
+  // estático: useReducedMotion difiere entre servidor y cliente.
   const reducido = useReducedMotion() === true;
+  const hidratado = useHidratado();
 
   const dynamicSpread = useMemo(() => {
     return children.length * spread;
   }, [children, spread]);
 
-  if (reducido) {
+  if (reducido || !hidratado) {
     return <MotionComponent className={cn('inline-block text-muted', className)}>{children}</MotionComponent>;
   }
 

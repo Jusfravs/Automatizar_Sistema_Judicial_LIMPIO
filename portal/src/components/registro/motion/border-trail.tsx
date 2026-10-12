@@ -1,5 +1,6 @@
 'use client';
 import { cn } from '@/lib/utils';
+import { useHidratado } from '@/lib/hidratado';
 import { motion, Transition, useReducedMotion } from 'motion/react';
 
 export type BorderTrailProps = {
@@ -17,15 +18,17 @@ export function BorderTrail({
   onAnimationComplete,
   style,
 }: BorderTrailProps) {
-  // Portal: con movimiento reducido no hay trazo (es decorativo).
+  // Portal: con movimiento reducido no hay trazo (es decorativo). Se monta tras hidratar:
+  // useReducedMotion difiere entre servidor y cliente.
   const reducido = useReducedMotion() === true;
+  const hidratado = useHidratado();
   const defaultTransition: Transition = {
     repeat: Infinity,
     duration: 5,
     ease: 'linear',
   };
 
-  if (reducido) return null;
+  if (reducido || !hidratado) return null;
 
   return (
     <div className='pointer-events-none absolute inset-0 rounded-[inherit] border border-transparent [mask-clip:padding-box,border-box] [mask-composite:intersect] [mask-image:linear-gradient(transparent,transparent),linear-gradient(black,black)]'>
