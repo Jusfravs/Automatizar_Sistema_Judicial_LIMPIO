@@ -423,6 +423,28 @@ body {
   --chart-3: var(--exito-solid);
   --chart-4: var(--atencion-solid);
   --chart-5: var(--peligro-solid);
+  /* Gráficos Bklit: ejes, rejilla, tooltip y marcadores con tokens Espoir (cambian con el tema). */
+  --chart-background: var(--surface);
+  --chart-foreground: var(--fg);
+  --chart-foreground-muted: var(--muted);
+  --chart-label: var(--muted);
+  --chart-grid: var(--border-subtle);
+  --chart-crosshair: var(--border-strong);
+  --chart-brush-border: var(--border-subtle);
+  --chart-line-primary: var(--primary);
+  --chart-line-secondary: var(--info-solid);
+  --chart-indicator-color: var(--primary);
+  --chart-indicator-secondary-color: var(--info-solid);
+  --chart-segment-background: var(--surface-2);
+  --chart-segment-line: var(--border-strong);
+  --chart-tooltip-background: var(--fg); /* tooltip invertido: alto contraste en ambos temas */
+  --chart-tooltip-foreground: var(--bg);
+  --chart-tooltip-muted: color-mix(in oklab, var(--bg) 70%, transparent);
+  --chart-marker-background: var(--surface-2);
+  --chart-marker-border: var(--border-strong);
+  --chart-marker-foreground: var(--fg);
+  --chart-marker-badge-background: var(--primary);
+  --chart-marker-badge-foreground: var(--on-primary);
 }
 
 @theme inline {
@@ -446,6 +468,10 @@ body {
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-label: var(--chart-label);
+  --color-chart-tooltip-background: var(--chart-tooltip-background);
+  --color-chart-tooltip-foreground: var(--chart-tooltip-foreground);
+  --color-chart-tooltip-muted: var(--chart-tooltip-muted);
   --font-heading: var(--font-sans);
 }
 
