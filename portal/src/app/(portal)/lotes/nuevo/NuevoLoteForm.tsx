@@ -526,13 +526,12 @@ export default function NuevoLoteForm() {
                   </dl>
                 )}
 
-                <div role="status">
-                  {error ? (
-                    <Alert tono="peligro" rol="alert">
-                      {error}
-                    </Alert>
-                  ) : null}
-                </div>
+                {/* Solo role="alert": anidarlo en un status lo haría leer dos veces. */}
+                {error ? (
+                  <Alert tono="peligro" rol="alert">
+                    {error}
+                  </Alert>
+                ) : null}
 
                 <div className="flex flex-wrap items-center gap-3 border-t border-subtle pt-5">
                   {paso < PASOS.length ? (

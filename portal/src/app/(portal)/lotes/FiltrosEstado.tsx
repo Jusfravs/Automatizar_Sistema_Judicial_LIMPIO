@@ -10,7 +10,7 @@ import { cx } from '@/lib/cx'
 export type OpcionEstado = { id: string; etiqueta: string; href: string }
 
 // El fondo del filtro activo se desliza al elegido: resorte sin rebote (un clic no tiene impulso).
-const DESLIZAR: Transition = { type: 'spring', duration: 0.3, bounce: 0 }
+const DESLIZAR: Transition = { type: 'spring', duration: 0.24, bounce: 0 }
 // Teclado y movimiento reducido: el fondo salta a su sitio.
 const SALTAR: Transition = { duration: 0 }
 
@@ -50,10 +50,11 @@ export function FiltrosEstado({ opciones, activo }: { opciones: readonly OpcionE
             href={opcion.href}
             aria-current={opcion.id === activo ? 'page' : undefined}
             className={cx(
-              'inline-flex min-h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors duration-(--duracion-lenta)',
+              'inline-flex min-h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors duration-(--duracion-lenta) ease-salida',
               FOCO,
               // data-checked lo pone AnimatedBackground: sigue al fondo, no espera a la URL.
-              'data-[checked=true]:border-primary data-[checked=true]:text-on-primary',
+              // El texto claro espera a que el fondo llegue: nunca blanco sobre la superficie clara.
+              'data-[checked=true]:border-primary data-[checked=true]:text-on-primary data-[checked=true]:delay-(--duracion-rapida)',
               'data-[checked=false]:border-subtle data-[checked=false]:bg-surface data-[checked=false]:text-muted data-[checked=false]:hover:text-fg',
             )}
           >

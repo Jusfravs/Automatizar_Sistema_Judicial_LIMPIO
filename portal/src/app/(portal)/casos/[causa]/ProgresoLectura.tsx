@@ -2,6 +2,7 @@
 
 import { motion, useReducedMotion, useScroll, type SpringOptions } from 'motion/react'
 import { ScrollProgress } from '@/components/registro/motion/scroll-progress'
+import { useHidratado } from '@/lib/hidratado'
 
 const BARRA = 'h-0.5 origin-left bg-primary'
 
@@ -17,6 +18,9 @@ const RESORTE: SpringOptions & { skipInitialAnimation: boolean } = { skipInitial
  */
 export function ProgresoLectura() {
   const reducido = useReducedMotion() === true
+  // useReducedMotion difiere entre servidor y cliente: la barra se monta tras hidratar.
+  const hidratado = useHidratado()
+  if (!hidratado) return null
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-14 z-1 lg:left-62 lg:top-0">
       {reducido ? <BarraDirecta /> : <ScrollProgress className={BARRA} springOptions={RESORTE} />}

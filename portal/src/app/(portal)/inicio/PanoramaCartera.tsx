@@ -11,13 +11,18 @@ import { intFmt } from '@/components/charts/chart-formatters'
 import { Grid } from '@/components/charts/grid'
 import { ChartTooltip, TooltipContent } from '@/components/charts/tooltip'
 import { Card, CardBody, CardHeader } from '@/components/ui'
+import { FOCO } from '@/components/ui/estilos'
+import { cx } from '@/lib/cx'
 
+/** `orden` 1–6 es el número procesal; ≥ 100, una etapa del catálogo sin número (va al final, sin prefijo). */
 export type EtapaResumen = { orden: number; corta: string; nombre: string; causas: number }
 export type DiaActividad = { dia: string; causas: number }
 
 const COLOR = 'var(--chart-1)'
-// Las barras crecen una sola vez, al entrar en pantalla (dato que llega), y en poco tiempo.
-const DURACION_MS = 600
+// Las barras crecen una sola vez, al entrar en pantalla (dato que llega), y en poco tiempo: Inicio
+// se visita muchas veces al día. Curva de salida del sistema, sin arranque lento.
+const DURACION_MS = 400
+const ENTRADA = { type: 'tween', duration: DURACION_MS / 1000, ease: [0.23, 1, 0.32, 1] } as const
 
 const fechaLarga = new Intl.DateTimeFormat('es-EC', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
 const fechaCorta = new Intl.DateTimeFormat('es-EC', { day: 'numeric', month: 'short', timeZone: 'UTC' })
@@ -74,26 +79,44 @@ function EtiquetasValor({ clave }: { clave: string }) {
   )
 }
 
-/** Tabla equivalente al gráfico para lectores de pantalla (el SVG es aria-hidden). */
-function TablaAccesible({ titulo, columnas, filas }: { titulo: string; columnas: [string, string]; filas: [string, number][] }) {
+/**
+ * Datos del gráfico en una tabla desplegable. El gráfico es aria-hidden: esta es la vía para lectores
+ * de pantalla y para quien usa teclado (los tooltips solo responden al puntero) o necesita el valor
+ * exacto de una cifra que no cupo en el gráfico.
+ */
+function TablaDatos({
+  titulo,
+  columnas,
+  filas,
+  nota,
+}: {
+  titulo: string
+  columnas: [string, string]
+  filas: [string, number][]
+  nota?: string
+}) {
   return (
-    <table className="sr-only">
-      <caption>{titulo}</caption>
-      <thead>
-        <tr>
-          <th scope="col">{columnas[0]}</th>
-          <th scope="col">{columnas[1]}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {filas.map(([etiqueta, valor]) => (
-          <tr key={etiqueta}>
-            <th scope="row">{etiqueta}</th>
-            <td>{intFmt(valor)}</td>
+    <details className="text-sm">
+      <summary className={cx('w-fit cursor-pointer rounded-control font-medium text-primary', FOCO)}>Ver datos</summary>
+      <table className="mt-2 w-full text-left">
+        <caption className="sr-only">{titulo}</caption>
+        <thead>
+          <tr className="border-b border-subtle text-rotulo text-muted">
+            <th scope="col" className="py-1.5 font-medium">{columnas[0]}</th>
+            <th scope="col" className="py-1.5 text-right font-medium">{columnas[1]}</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className="divide-y divide-subtle">
+          {filas.map(([etiqueta, valor]) => (
+            <tr key={etiqueta}>
+              <th scope="row" className="py-1.5 font-normal text-fg">{etiqueta}</th>
+              <td className="py-1.5 text-right tabular-nums text-fg">{intFmt(valor)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {nota ? <p className="mt-2 text-xs text-muted">{nota}</p> : null}
+    </details>
   )
 }
 
@@ -107,18 +130,24 @@ function useVisible() {
 function GraficoEtapas({ etapas, sinEtapa }: { etapas: EtapaResumen[]; sinEtapa: number }) {
   const reducido = useReducedMotion() ?? false
   const { ref, visible } = useVisible()
-  const datos = useMemo(() => etapas.map((e) => ({ etapa: `${e.orden} ${e.corta}`, causas: e.causas, nombre: e.nombre })), [etapas])
+  const datos = useMemo(() => etapas.map((e) => ({ etapa: e.orden < 100 ? `${e.orden} ${e.corta}` : e.corta, causas: e.causas, nombre: e.nombre })), [etapas])
   const total = etapas.reduce((s, e) => s + e.causas, 0)
+  // Margen derecho: lo justo para la cifra más larga tras su barra.
+  const margenDerecho = intFmt(Math.max(0, ...etapas.map((e) => e.causas))).length * 7 + 12
 
   return (
     <Card className="flex flex-col">
       <CardHeader
         nivel={3}
         titulo="Causas por etapa procesal"
-        descripcion={`Etapa actual de ${intFmt(total)} causas, en orden del proceso`}
+        descripcion={`Etapa actual de ${intFmt(total)} ${total === 1 ? 'causa' : 'causas'}, en orden del proceso`}
       />
       <CardBody className="flex flex-1 flex-col gap-3">
-        <div ref={ref} className="aspect-[3/2] w-full sm:aspect-[16/9]">
+        {total === 0 ? (
+          <p className="text-sm text-muted">Aún no hay causas con etapa procesal.</p>
+        ) : (
+          // aria-hidden en el contenedor: Bklit monta ejes y tooltip fuera del SVG. Los datos están en la tabla.
+          <div ref={ref} aria-hidden="true" className="isolate aspect-[3/2] w-full sm:aspect-[16/9]">
           {visible ? (
             <BarChart
               data={datos}
@@ -127,34 +156,37 @@ function GraficoEtapas({ etapas, sinEtapa }: { etapas: EtapaResumen[]; sinEtapa:
               aspectRatio="auto"
               className="h-full"
               barGap={0.45}
-              margin={{ top: 4, right: 44, bottom: 4, left: 112 }}
+              margin={{ top: 4, right: margenDerecho, bottom: 4, left: 112 }}
               animationDuration={reducido ? 0 : DURACION_MS}
+              enterTransition={ENTRADA}
             >
               <Grid horizontal={false} vertical numTicksColumns={4} />
-              <Bar dataKey="causas" fill={COLOR} lineCap={4} animate={!reducido} fadedOpacity={0.45} />
+              <Bar dataKey="causas" fill={COLOR} lineCap={4} animate={!reducido} fadedOpacity={0.6} />
               <EtiquetasValor clave="causas" />
               <BarYAxis />
               <ChartTooltip
                 showCrosshair={false}
                 showDatePill={false}
-                damping={reducido ? 0 : 20}
+                damping={0}
+                showDots={false}
                 content={({ point }) => (
                   <TooltipContent title={String(point.nombre)} rows={[{ color: COLOR, label: 'Causas', value: Number(point.causas) }]} />
                 )}
               />
             </BarChart>
           ) : null}
-        </div>
+          </div>
+        )}
         {sinEtapa > 0 ? (
           <p className="mt-auto text-xs text-muted">
             {intFmt(sinEtapa)} {sinEtapa === 1 ? 'causa' : 'causas'} sin etapa (revisión manual, excluidas o sin datos) no
             {sinEtapa === 1 ? ' aparece' : ' aparecen'} en el gráfico.
           </p>
         ) : null}
-        <TablaAccesible
+        <TablaDatos
           titulo="Causas por etapa procesal"
           columnas={['Etapa', 'Causas']}
-          filas={[...etapas.map((e): [string, number] => [`${e.orden}. ${e.nombre}`, e.causas]), ['Sin etapa', sinEtapa]]}
+          filas={[...etapas.map((e): [string, number] => [e.orden < 100 ? `${e.orden}. ${e.nombre}` : e.nombre, e.causas]), ['Sin etapa', sinEtapa]]}
         />
       </CardBody>
     </Card>
@@ -186,7 +218,7 @@ function GraficoActividad({ dias }: { dias: DiaActividad[] }) {
         {vacio ? (
           <p className="text-sm text-muted">No hubo consultas en los últimos 30 días.</p>
         ) : (
-          <div ref={ref} className="aspect-[3/2] w-full sm:aspect-[16/9]">
+          <div ref={ref} aria-hidden="true" className="isolate aspect-[3/2] w-full sm:aspect-[16/9]">
             {visible ? (
               <BarChart
                 data={datos}
@@ -194,17 +226,19 @@ function GraficoActividad({ dias }: { dias: DiaActividad[] }) {
                 aspectRatio="auto"
                 className="h-full"
                 barGap={0.25}
-                margin={{ top: 24, right: 4, bottom: 28, left: 4 }}
+                margin={{ top: 24, right: 20, bottom: 28, left: 20 }}
                 animationDuration={reducido ? 0 : DURACION_MS}
+                enterTransition={ENTRADA}
               >
                 <Grid horizontal numTicksRows={3} />
-                <Bar dataKey="causas" fill={COLOR} lineCap={2} animate={!reducido} fadedOpacity={0.45} />
+                <Bar dataKey="causas" fill={COLOR} lineCap={2} animate={!reducido} fadedOpacity={0.6} />
                 <EtiquetasValor clave="causas" />
                 <BarXAxis maxLabels={5} />
                 <ChartTooltip
                   showCrosshair={false}
                   showDatePill={false}
-                  damping={reducido ? 0 : 20}
+                  damping={0}
+                  showDots={false}
                   content={({ point }) => (
                     <TooltipContent
                       title={fechaLarga.format(new Date(`${String(point.fecha)}T00:00:00Z`))}
@@ -216,14 +250,20 @@ function GraficoActividad({ dias }: { dias: DiaActividad[] }) {
             ) : null}
           </div>
         )}
-        <p className="mt-auto text-xs text-muted">Una causa consultada varias veces el mismo día cuenta una vez.</p>
-        <TablaAccesible
-          titulo="Causas consultadas por día, días con actividad"
-          columnas={['Día', 'Causas']}
-          filas={dias
-            .filter((d) => d.causas > 0)
-            .map((d): [string, number] => [fechaLarga.format(new Date(`${d.dia}T00:00:00Z`)), d.causas])}
-        />
+        <p className="mt-auto text-xs text-muted">
+          Consultas con resultado; los intentos con error no cuentan. Una causa consultada varias veces el mismo día
+          cuenta una vez.
+        </p>
+        {vacio ? null : (
+          <TablaDatos
+            titulo="Causas consultadas por día, días con actividad"
+            nota={`Los otros ${30 - conActividad} días del periodo no tuvieron consultas.`}
+            columnas={['Día', 'Causas']}
+            filas={dias
+              .filter((d) => d.causas > 0)
+              .map((d): [string, number] => [fechaLarga.format(new Date(`${d.dia}T00:00:00Z`)), d.causas])}
+          />
+        )}
       </CardBody>
     </Card>
   )
@@ -241,7 +281,7 @@ export function PanoramaCartera({
 }) {
   return (
     <section aria-labelledby="panorama-titulo" className="space-y-3">
-      <h2 id="panorama-titulo" className="text-base font-semibold text-fg">
+      <h2 id="panorama-titulo" className="text-lg font-semibold text-fg">
         Panorama de la cartera
       </h2>
       <div className="grid gap-3 sm:gap-4 lg:grid-cols-2">

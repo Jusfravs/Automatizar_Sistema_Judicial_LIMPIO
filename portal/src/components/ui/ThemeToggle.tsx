@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, useRef, useSyncExternalStore } from 'react'
+import { useId, useRef, useState, useSyncExternalStore } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { cx } from '@/lib/cx'
 
@@ -26,9 +26,14 @@ function temaGuardado(): Tema | null {
   }
 }
 
-/** Tema efectivo: la elección guardada o, si nunca se eligió, el del sistema operativo. */
+/**
+ * Tema efectivo: la elección guardada; si el almacenamiento está bloqueado, la de esta pestaña
+ * (data-theme); si nunca se eligió, el del sistema operativo.
+ */
 function leerTema(): Tema {
-  return temaGuardado() ?? (window.matchMedia(CONSULTA_OSCURO).matches ? 'dark' : 'light')
+  const fijado = document.documentElement.dataset.theme
+  const enPestana = fijado === 'light' || fijado === 'dark' ? fijado : null
+  return temaGuardado() ?? enPestana ?? (window.matchMedia(CONSULTA_OSCURO).matches ? 'dark' : 'light')
 }
 
 /** Misma regla que el script inline de layout.tsx: data-theme fija el tema elegido. */
@@ -71,12 +76,14 @@ const temaServidor = (): Tema => 'light'
  * Cambia el tema revelando el nuevo con un círculo que crece desde `punto` (adaptado de Skiper UI
  * skiper26 — https://skiper-ui.com, atribución requerida por su licencia gratuita). Usa una View
  * Transition con tipo "tema": globals.css (§4) solo anima la raíz con ese tipo, así que no choca con
- * las transiciones de navegación. Sin soporte o con movimiento reducido, el cambio es inmediato.
+ * las transiciones de navegación. Sin soporte, con movimiento reducido o desde el teclado (flechas del
+ * grupo de radios: lo que dispara el teclado no se anima), el cambio es inmediato.
  */
-function cambiarConRevelado(tema: Tema, punto: { x: number; y: number }) {
+function cambiarConRevelado(tema: Tema, punto: { x: number; y: number }, alAplicar: () => void) {
   const reducido = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   if (reducido || typeof document.startViewTransition !== 'function') {
     guardarTema(tema)
+    alAplicar()
     return
   }
   const raiz = document.documentElement
@@ -86,20 +93,27 @@ function cambiarConRevelado(tema: Tema, punto: { x: number; y: number }) {
   raiz.style.setProperty('--tema-y', `${punto.y}px`)
   raiz.style.setProperty('--tema-r', `${Math.ceil(radio)}px`)
   try {
-    document.startViewTransition({ update: () => guardarTema(tema), types: ['tema'] })
+    document.startViewTransition({
+      update: () => {
+        guardarTema(tema)
+        alAplicar()
+      },
+      types: ['tema'],
+    })
   } catch {
     // Navegadores con View Transitions de nivel 1 (sin tipos): cambio inmediato, sin revelado.
     guardarTema(tema)
+    alAplicar()
   }
 }
 
 /**
  * Disco que gira media vuelta al cambiar de tema (adaptado de Skiper UI skiper4, icono 1).
- * Mitad clara y mitad oscura con el color del contexto; solo transform, 350 ms.
+ * Mitad clara y mitad oscura con el color del contexto; solo transform, 240 ms.
  */
 function DiscoTema({ oscuro }: { oscuro: boolean }) {
   const reducido = useReducedMotion()
-  const transicion = { duration: reducido ? 0 : 0.35, ease: [0.23, 1, 0.32, 1] as const }
+  const transicion = { duration: reducido ? 0 : 0.24, ease: [0.23, 1, 0.32, 1] as const }
   return (
     <svg viewBox="0 0 240 240" aria-hidden="true" className="size-3.5 shrink-0">
       <motion.g animate={{ rotate: oscuro ? -180 : 0 }} transition={transicion} style={{ originX: '120px', originY: '120px' }}>
@@ -140,21 +154,30 @@ function IconoLuna({ className }: { className?: string }) {
 export function ThemeToggle({ className }: { className?: string }) {
   const tema = useSyncExternalStore(suscribir, leerTema, temaServidor)
   const nombre = useId()
-  // Punto del clic: el revelado crece desde ahí. Con teclado no hay puntero y se usa el centro del control.
+  // Punto del clic: el revelado crece desde ahí. Sin puntero (teclado) no hay revelado.
   const origen = useRef<{ x: number; y: number } | null>(null)
+  // La elección se marca al instante; el tema real cambia dentro de la transición (un fotograma
+  // después). Sin esto, el radio volvería a la opción anterior y un lector anunciaría "no seleccionado".
+  const [elegido, setElegido] = useState<Tema | null>(null)
+  const marcado = elegido ?? tema
 
-  function elegir(nuevo: Tema, control: HTMLElement) {
-    if (nuevo === leerTema()) return
-    const caja = control.getBoundingClientRect()
-    const punto = origen.current ?? { x: caja.left + caja.width / 2, y: caja.top + caja.height / 2 }
+  function elegir(nuevo: Tema) {
+    const punto = origen.current
     origen.current = null
-    cambiarConRevelado(nuevo, punto)
+    if (nuevo === leerTema()) return
+    if (!punto) {
+      guardarTema(nuevo)
+      return
+    }
+    setElegido(nuevo)
+    cambiarConRevelado(nuevo, punto, () => setElegido(null))
   }
 
   return (
-    <fieldset className={cx('min-w-0', className)}>
+    // Una tecla anula un clic anterior que no cambió nada (p. ej. sobre la opción ya activa).
+    <fieldset className={cx('min-w-0', className)} onKeyDown={() => (origen.current = null)}>
       <legend className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-current/70">
-        <DiscoTema oscuro={tema === 'dark'} />
+        <DiscoTema oscuro={marcado === 'dark'} />
         Tema
       </legend>
       <div className="grid grid-cols-2 gap-0.5 rounded-control border border-current/20 p-0.5">
@@ -177,8 +200,8 @@ export function ThemeToggle({ className }: { className?: string }) {
                 type="radio"
                 name={nombre}
                 value={opcion.valor}
-                checked={tema === opcion.valor}
-                onChange={(e) => elegir(opcion.valor, e.currentTarget.closest('label') ?? e.currentTarget)}
+                checked={marcado === opcion.valor}
+                onChange={() => elegir(opcion.valor)}
                 className="sr-only"
               />
               <Icono className="size-4 shrink-0" />

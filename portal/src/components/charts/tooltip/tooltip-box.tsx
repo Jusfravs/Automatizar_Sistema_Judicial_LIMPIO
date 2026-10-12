@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useSpring } from "motion/react";
+import { motion, useReducedMotion, useSpring } from "motion/react";
 import type { RefObject } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -88,6 +88,8 @@ function TooltipBoxInner({
   container: HTMLElement;
 }) {
   const { tooltipBoxSpring } = useChartConfig();
+  // Portal: con movimiento reducido el panel aparece sin entrada (escala ni desplazamiento).
+  const reducido = useReducedMotion() === true;
   const effectiveSpring = springConfig ?? tooltipBoxSpring;
 
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -190,7 +192,7 @@ function TooltipBoxInner({
     ...panelStyle,
   };
 
-  if (!entrance) {
+  if (!entrance || reducido) {
     return createPortal(
       <div
         className={cn("pointer-events-none absolute z-50", className)}
@@ -218,10 +220,11 @@ function TooltipBoxInner({
       <motion.div
         animate={{ scale: 1, opacity: 1, x: 0 }}
         className={panelClassName}
-        initial={{ scale: 0.85, opacity: 0, x: isFlipped ? 20 : -20 }}
+        // Portal: entrada corta y sin rebote (docs/system.md §3.3).
+        initial={{ scale: 0.97, opacity: 0, x: isFlipped ? 4 : -4 }}
         key={flipKey}
         style={panelStyleResolved}
-        transition={{ type: "spring", stiffness: 300, damping: 25 }}
+        transition={{ type: "spring", duration: 0.18, bounce: 0 }}
       >
         {children}
       </motion.div>

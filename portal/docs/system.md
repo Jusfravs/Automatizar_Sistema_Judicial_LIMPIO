@@ -84,8 +84,9 @@ usa cientos de veces al día: lo frecuente se siente inmediato, lo excepcional s
   hacen entrar la vista nueva 16px desde el lado al que se avanza, con fundido, en 240ms; la vieja
   solo se desvanece. Con movimiento reducido quedan en el fundido.
 - **Cambio de tema** (`ThemeToggle`): View Transition con tipo `tema`; la vista nueva se revela con
-  un `clip-path: circle()` que crece desde el clic (o desde el centro del control con teclado) en
-  520ms. Sin View Transitions o con movimiento reducido, el cambio es inmediato.
+  un `clip-path: circle()` que crece desde el clic en 400ms (excepción a la escala de duraciones:
+  cambio poco frecuente y de pantalla completa). Con teclado (flechas del grupo de radios), sin View
+  Transitions o con movimiento reducido, el cambio es inmediato.
 - **Elementos compartidos** (sin tipo, también con Atrás): el resaltado de la navegación se desliza
   (`indicador`) y el número de causa viaja de la lista al detalle (`texto-compartido`, en
   `NumeroCausaCompartido`). Un nombre de transición solo puede estar montado una vez.
@@ -94,9 +95,10 @@ usa cientos de veces al día: lo frecuente se siente inmediato, lo excepcional s
 - **Componentes de movimiento adoptados** (sección 6): paso del asistente con dirección
   (`TransitionPanel`, 240ms entrada / 160ms salida), fondo deslizante de los filtros de /lotes
   (`AnimatedBackground`, resorte sin rebote; salta si se activó con teclado), brillo en "Cargando…" y
-  "Buscando…" (`TextoCargando`), barra de lectura en el detalle de causa (`ProgresoLectura`), trazo en
-  el borde de "Lotes en curso" solo mientras un lote está EN_CURSO (`TrazoEnCurso`) y subrayado que
-  crece en las migas (`EnlaceSubrayado`, de Skiper UI).
+  "Buscando…" (`TextoCargando`; en los esqueletos aparece tras 400ms para no parpadear en cargas
+  rápidas), barra de lectura en el detalle de causa (`ProgresoLectura`), trazo en el borde de "Lotes
+  en curso" (`TrazoEnCurso`: tres vueltas de 8s y se retira; solo con un lote EN_CURSO y el servidor
+  procesando) y subrayado que crece en las migas con hover o foco (`EnlaceSubrayado`, de Skiper UI).
 - **Animaciones:** `animate-aparecer`, `animate-subir`, `animate-latido` (una onda por latido real,
   reiniciada con `key`) y `animate-barrido` (carga indeterminada, pausada cuando no se usa).
 - **Modal** (`Dialog`): `.dialogo-animado` anima la entrada y la salida (más corta; requiere `overlay`).
@@ -115,8 +117,10 @@ usa cientos de veces al día: lo frecuente se siente inmediato, lo excepcional s
   "Ver más" (`.texto-plegable`), a 240ms, nunca en listas.
   **Excepción documentada:** el brillo de `TextoCargando` anima `background-position` en bucle; solo
   existe mientras algo carga, sobre texto corto, y desaparece con movimiento reducido.
-  **Excepción documentada:** el trazo de `TrazoEnCurso` es un bucle lento (8s) e indica trabajo vivo;
-  no se muestra con movimiento reducido.
+  **Excepción documentada:** el trazo de `TrazoEnCurso` anima `offset-distance` (tres vueltas y se
+  retira); no se muestra con movimiento reducido.
+  **Excepción documentada:** las barras de Bklit crecen animando el tamaño del rect (400ms, una sola
+  vez al entrar en pantalla); con movimiento reducido no crecen.
 - Las salidas son más cortas que las entradas. Un clic no tiene impulso: sin rebotes.
 - **No animes lo que dispara el teclado ni lo de alta frecuencia:** escribir, moverse con flechas,
   atajos (1–4, Ctrl+K), cada fila al paginar, refrescos de fondo.
@@ -182,9 +186,10 @@ npx shadcn@latest add @skiper-ui/<nombre>           # https://skiper-ui.com/r/{n
 - **Al reinstalar** un componente con `shadcn add`, revisar `git status`: Bklit sobrescribe
   `lib/utils.ts` (restaurar el `cn` extendido) y trae CSS propio que no se usa.
 - **Gráficos** (`inicio/PanoramaCartera.tsx`): una sola serie y un solo tono (`--chart-1`), cifras
-  junto a las barras en tinta (nunca del color de la serie), tooltip en español, tabla `sr-only`
-  con los datos (el SVG es `aria-hidden`) y montaje al entrar en pantalla. Las barras horizontales
+  junto a las barras en tinta (nunca del color de la serie), tooltip en español sin rebote, y los
+  datos en una tabla desplegable "Ver datos" (el contenedor del gráfico es `aria-hidden`: Bklit pinta
+  ejes y tooltip fuera del SVG). Se montan al entrar en pantalla. Las barras horizontales
   sirven para categorías de nombre largo. En Bklit, una capa propia no debe tener prop `dataKey`:
   la cuenta como serie y estrecha las barras. Datos: vistas `v_resumen_etapas_actuales` y
-  `v_actividad_diaria` (migración 009).
+  `v_actividad_diaria` (migraciones 009 y 010; solo cuenta consultas con resultado).
 - **Cada componente que se adopte** pasa por la revisión de movimiento (sección 3) y de accesibilidad antes de usarse en una pantalla. Licencia de Skiper UI gratuita: exige atribución, que va en el archivo.

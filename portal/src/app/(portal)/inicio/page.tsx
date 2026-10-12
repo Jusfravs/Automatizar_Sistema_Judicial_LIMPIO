@@ -198,20 +198,23 @@ async function consultarPanorama(supabase: Supabase) {
     supabase.from('v_resumen_etapas_actuales').select('eta_id, etapa, causas'),
     supabase.from('v_actividad_diaria').select('dia, causas').order('dia'),
   ])
-  if (etapas.error || actividad.error) {
-    console.error('No se pudo cargar el panorama de la cartera:', (etapas.error ?? actividad.error)?.message)
-    return null
-  }
+  if (etapas.error) console.error('No se pudo cargar el resumen por etapa:', etapas.error.message)
+  if (actividad.error) console.error('No se pudo cargar la actividad diaria:', actividad.error.message)
+  if (etapas.error || actividad.error) return null
   let sinEtapa = 0
   const porEtapa: EtapaResumen[] = []
   for (const fila of etapas.data) {
-    const orden = Number.parseInt(fila.etapa ?? '', 10)
-    if (fila.eta_id === null || Number.isNaN(orden)) {
+    if (fila.eta_id === null) {
       sinEtapa += fila.causas ?? 0
       continue
     }
-    const textoCatalogo = (fila.etapa ?? '').replace(/^\d+\s*/, '')
-    const nombres = NOMBRES_ETAPA[orden] ?? { corta: textoCatalogo, nombre: textoCatalogo }
+    // Una etapa nueva del catálogo sin número de orden va al final (por su id) con su nombre en
+    // formato de oración: "EJECUCION FORZOSA" → "Ejecucion forzosa".
+    const numero = Number.parseInt(fila.etapa ?? '', 10)
+    const orden = Number.isNaN(numero) ? 100 + fila.eta_id : numero
+    const texto = (fila.etapa ?? '').replace(/^\d+\s*/, '').toLowerCase()
+    const oracion = texto.charAt(0).toUpperCase() + texto.slice(1)
+    const nombres = NOMBRES_ETAPA[orden] ?? { corta: oracion, nombre: oracion }
     porEtapa.push({ orden, ...nombres, causas: fila.causas ?? 0 })
   }
   porEtapa.sort((a, b) => a.orden - b.orden)
@@ -355,7 +358,11 @@ export default async function InicioPage() {
         </CardBody>
       </Card>
 
-      {panorama ? <PanoramaCartera {...panorama} /> : null}
+      {panorama ? (
+        <PanoramaCartera {...panorama} />
+      ) : (
+        <Alert tono="atencion">No se pudo cargar el panorama de la cartera. Prueba a actualizar en unos minutos.</Alert>
+      )}
     </div>
   )
 }

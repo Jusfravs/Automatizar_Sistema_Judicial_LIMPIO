@@ -35,15 +35,16 @@ function BarYAxisLabel({
       }}
     >
       <motion.span
+        // Portal: opacidad 1 siempre (a 0.7 el texto atenuado baja de 4.5:1); el hover cambia el color.
         animate={{
-          opacity: isHovered ? 1 : 0.7,
+          opacity: 1,
           color: isHovered
             ? "var(--foreground)"
             : "var(--chart-label, var(--color-zinc-500))",
         }}
         className={cn("max-w-full truncate whitespace-nowrap text-right text-xs")}
         initial={{
-          opacity: 0.7,
+          opacity: 1,
           color: "var(--chart-label, var(--color-zinc-500))",
         }}
         transition={{ duration: 0.15 }}

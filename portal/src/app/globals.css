@@ -584,7 +584,11 @@ html:active-view-transition-type(tema)::view-transition-old(root) {
   animation: none;
 }
 html:active-view-transition-type(tema)::view-transition-new(root) {
-  animation: revelar-tema 520ms var(--curva-salida) both;
+  animation: revelar-tema 400ms var(--curva-salida) both;
+}
+/* Los transition-colors de la vista nueva no deben fundirse durante el revelado (ensucian el borde). */
+html:active-view-transition-type(tema) * {
+  transition: none !important;
 }
 
 ::view-transition-group(.pagina) {
@@ -609,6 +613,10 @@ html:active-view-transition-type(tema)::view-transition-new(root) {
 }
 @keyframes entrar-atras {
   from { opacity: 0; translate: -16px 0; }
+}
+::view-transition-group(.pagina.adelante),
+::view-transition-group(.pagina.atras) {
+  animation-duration: var(--duracion-lenta);
 }
 ::view-transition-new(.pagina.adelante) {
   animation: var(--duracion-lenta) var(--curva-salida) both entrar-adelante;
