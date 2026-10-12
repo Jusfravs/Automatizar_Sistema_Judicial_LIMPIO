@@ -85,6 +85,7 @@ export const ERRORES_MAP: Record<string, string> = {
   // RPC errors
   'SOLICITUD_NO_EXISTE': 'La solicitud no existe',
   'SOLICITUD_FINALIZADA': 'El lote ya terminó y no se puede cancelar',
+  'SOLICITUD_DE_OTRO_USUARIO': 'Solo quien creó el lote o un administrador puede cancelarlo',
   'ROL_NO_AUTORIZADO': 'No tiene permiso para esta acción',
   'REVISION_OBSOLETA': 'La revisión ya no es válida: hay una auditoría más nueva o ya fue resuelta',
   'PROPUESTA_IA_INVALIDA': 'La propuesta de la IA no es válida para ser aceptada',

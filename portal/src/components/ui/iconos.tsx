@@ -133,6 +133,24 @@ export function IconoBuscar(props: IconoProps) {
   )
 }
 
+export function IconoCandado(props: IconoProps) {
+  return (
+    <Trazo {...props}>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </Trazo>
+  )
+}
+
+export function IconoBrujula(props: IconoProps) {
+  return (
+    <Trazo {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m15.5 8.5-2.2 4.8-4.8 2.2 2.2-4.8z" />
+    </Trazo>
+  )
+}
+
 /** Indicador de carga. Con reduced-motion globals.css detiene el giro y queda estático. */
 export function Spinner({ className = 'size-4 animate-spin', ...props }: IconoProps) {
   return (

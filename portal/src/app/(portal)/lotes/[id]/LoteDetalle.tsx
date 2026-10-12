@@ -40,9 +40,11 @@ interface LoteDetalleProps {
   colaErrores: ColaError[]
   /** Texto del estado del servidor si está caído; null si responde. */
   avisoServidor: string | null
+  /** Quien creó el lote o un administrador: puede cancelarlo. */
+  puedeGestionar: boolean
 }
 
-export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, avisoServidor }: LoteDetalleProps) {
+export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, avisoServidor, puedeGestionar }: LoteDetalleProps) {
   // Los avisos que aparecen después de cargar abren su espacio con movimiento.
   const despliegue = useHidratado() ? 'despliegue' : undefined
   const [actual, setActual] = useState<SolicitudDetalle>(solicitud)
@@ -220,7 +222,7 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
     window.location.href = data.signedUrl
   }
 
-  const puedeCancelar = esActivo && !actual.cancelar
+  const puedeCancelar = esActivo && !actual.cancelar && puedeGestionar
   const fallido = ESTADOS_FALLIDOS.includes(actual.estado)
 
   const acciones = (

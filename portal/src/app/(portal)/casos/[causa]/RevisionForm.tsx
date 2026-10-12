@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/Button'
 import { Radio } from '@/components/ui/Radio'
 import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
+import type { ColaRevision } from '@/lib/colaRevision'
 
 const MAX_OBSERVACION = 1000
 // Aviso que deja una revisión al saltar a la siguiente causa; lo muestra el formulario de destino.
@@ -23,8 +24,6 @@ const CLAVE_AVISO = 'revision:aviso'
 
 type Campo = 'decision' | 'etapa' | 'fase' | 'observacion'
 
-/** Lugar de esta causa en la cola de revisiones pendientes. */
-export type ColaRevision = { posicion: number | null; total: number; siguiente: string | null }
 
 interface RevisionFormProps {
   auditoriaId: number

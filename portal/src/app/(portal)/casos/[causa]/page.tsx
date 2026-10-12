@@ -30,7 +30,8 @@ import {
 } from '@/lib/casos'
 import { NumeroCausaCompartido } from '@/components/NumeroCausa'
 import DetalleActuacion from './DetalleActuacion'
-import RevisionForm, { type ColaRevision } from './RevisionForm'
+import RevisionForm from './RevisionForm'
+import { leerCausasPendientes, ubicarEnCola, type ColaRevision } from '@/lib/colaRevision'
 
 export const metadata = { title: 'Detalle de la causa' }
 
@@ -128,18 +129,11 @@ export default async function CasoPage({ params, searchParams }: Props) {
     }
   }
 
-  // Cola de revisión: posición de esta causa entre las pendientes y la siguiente a revisar.
+  // Cola de revisión: posición de esta causa entre TODAS las pendientes y la siguiente a revisar.
   let cola: ColaRevision | null = null
   if (revision?.estado === 'PENDIENTE') {
-    const pend = await supabase.from('revisiones_ia').select('numero_causa').eq('estado', 'PENDIENTE').order('id').limit(1000)
-    if (pend.error) {
-      console.error('No se pudo leer la cola de revisiones:', pend.error.message)
-    } else {
-      const causas = [...new Set((pend.data ?? []).map((r) => r.numero_causa))]
-      const indice = causas.indexOf(causa)
-      const resto = indice >= 0 ? [...causas.slice(indice + 1), ...causas.slice(0, indice)] : causas.filter((c) => c !== causa)
-      cola = { posicion: indice >= 0 ? indice + 1 : null, total: causas.length, siguiente: resto[0] ?? null }
-    }
+    const causas = await leerCausasPendientes(supabase)
+    if (causas) cola = ubicarEnCola(causas, causa)
   }
 
   const ia = leerDecisionIA(auditoria?.decision_json ?? null)
