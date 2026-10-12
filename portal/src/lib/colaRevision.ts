@@ -17,19 +17,23 @@ export type ColaRevision = { posicion: number | null; total: number; siguiente: 
 export async function leerCausasPendientes(supabase: SupabaseClient<Database>): Promise<string[] | null> {
   const causas: string[] = []
   const vistas = new Set<string>()
+  // Paginación por clave (id > último visto), no por desplazamiento: si otra persona resuelve
+  // una revisión mientras se lee, las siguientes no se corren de página (revisión de Codex).
+  let ultimoId = 0
   for (let pagina = 0; pagina < PAGINAS_MAXIMAS; pagina++) {
-    const desde = pagina * FILAS_POR_PAGINA
     const { data, error } = await supabase
       .from('revisiones_ia')
-      .select('numero_causa')
+      .select('id, numero_causa')
       .eq('estado', 'PENDIENTE')
+      .gt('id', ultimoId)
       .order('id')
-      .range(desde, desde + FILAS_POR_PAGINA - 1)
+      .limit(FILAS_POR_PAGINA)
     if (error) {
       console.error('No se pudo leer la cola de revisiones:', error.message)
       return null
     }
-    for (const { numero_causa } of data ?? []) {
+    for (const { id, numero_causa } of data ?? []) {
+      ultimoId = id
       if (!vistas.has(numero_causa)) {
         vistas.add(numero_causa)
         causas.push(numero_causa)

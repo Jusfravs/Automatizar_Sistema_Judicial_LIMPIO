@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { ButtonLink } from '@/components/ui/ButtonLink'
 import { cx } from '@/lib/cx'
+import { useHidratado } from '@/lib/hidratado'
 import { clasesBoton, FOCO } from '@/components/ui/estilos'
 
 export type ValoresFiltro = {
@@ -65,6 +66,8 @@ export function FiltrosCasos({
   const [valores, setValores] = useState(iniciales)
   // En móvil los filtros se pliegan tras un botón; en sm+ siempre están visibles.
   const [abiertoMovil, setAbiertoMovil] = useState(false)
+  // Sin JavaScript (o antes de hidratar) el panel queda abierto: el formulario GET sigue usable.
+  const hidratado = useHidratado()
   const panelId = useId()
   const activos = [valores.q.trim(), valores.estado, valores.fase, valores.ciudad.trim(), valores.pendientes].filter(Boolean).length
   const espera = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -135,6 +138,7 @@ export function FiltrosCasos({
           aria-expanded={abiertoMovil}
           aria-controls={panelId}
           onClick={() => setAbiertoMovil((v) => !v)}
+          hidden={!hidratado}
           className={cx('flex w-full items-center justify-between gap-3 rounded-control text-sm font-semibold text-fg sm:hidden', FOCO)}
         >
           <span className="flex items-center gap-2">
@@ -153,7 +157,7 @@ export function FiltrosCasos({
             <path d="M6 9.5 2.5 5h7z" fill="currentColor" />
           </svg>
         </button>
-        <div id={panelId} className={cx('space-y-4 max-sm:pt-4', !abiertoMovil && 'max-sm:hidden')}>
+        <div id={panelId} className={cx('space-y-4', hidratado && 'max-sm:pt-4', hidratado && !abiertoMovil && 'max-sm:hidden')}>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Número de causa" htmlFor="q">
               <Input

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { NAVEGACION } from '@/lib/transiciones'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -47,17 +48,19 @@ async function getSolicitudes(supabase: Supabase, estado: string | null, pagina:
     .from('solicitudes_lote')
     .select('id, archivo_nombre, modo, parametro, trabajadores, estado, creado_en, mensaje, ejecucion_id', { count: 'exact' })
     .order('creado_en', { ascending: false })
+    .order('id', { ascending: false }) // desempate estable entre lotes creados en el mismo instante
     .range(desde, desde + LOTES_POR_PAGINA - 1)
   if (estado) consulta = consulta.eq('estado', estado)
 
   const { data, error, count } = await consulta
-  // Una página fuera de rango no es un error: simplemente no tiene filas.
-  if (error?.code === 'PGRST103') return { solicitudes: [] as SolicitudLote[], total: count ?? 0, error: false }
+  // Página fuera de rango: se avisa para redirigir a la primera.
+  if (error?.code === 'PGRST103') return { solicitudes: [] as SolicitudLote[], total: count ?? 0, error: false, fueraDeRango: true }
   if (error) {
     console.error('Error fetching solicitudes:', error)
-    return { solicitudes: [] as SolicitudLote[], total: 0, error: true }
+    return { solicitudes: [] as SolicitudLote[], total: 0, error: true, fueraDeRango: false }
   }
-  return { solicitudes: (data ?? []) as SolicitudLote[], total: count ?? 0, error: false }
+  const solicitudes = (data ?? []) as SolicitudLote[]
+  return { solicitudes, total: count ?? 0, error: false, fueraDeRango: pagina > 1 && solicitudes.length === 0 }
 }
 
 function urlLotes(estado: string | null, pagina: number): string {
@@ -109,7 +112,9 @@ export default async function LotesPage({
   const pagina = leerPagina(primerValor(sp.page))
 
   const supabase = await createClient()
-  const { solicitudes, total, error } = await getSolicitudes(supabase, estado, pagina)
+  const { solicitudes, total, error, fueraDeRango } = await getSolicitudes(supabase, estado, pagina)
+  // ?page= más allá del final (enlace viejo o escrito a mano): a la primera página, no una tabla vacía.
+  if (fueraDeRango) redirect(urlLotes(estado, 1))
   const totalPaginas = Math.max(1, Math.ceil(total / LOTES_POR_PAGINA))
   const avance = error ? new Map<string, EstadoEjecucion>() : await getAvance(supabase, solicitudes)
 
