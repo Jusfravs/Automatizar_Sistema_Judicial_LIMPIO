@@ -9,6 +9,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { EstadoBadge } from '@/components/ui/EstadoBadge'
 import { CONTROL, FOCO } from '@/components/ui/estilos'
 import { IconoBuscar, Spinner } from '@/components/ui/iconos'
+import { TextoCargando } from '@/components/TextoCargando'
 
 /** Evento para abrir el buscador desde cualquier botón (barra lateral, cabecera móvil). */
 export const EVENTO_ABRIR_BUSCADOR = 'buscador-causas:abrir'
@@ -219,7 +220,8 @@ export function BuscadorCausas() {
         </div>
 
         <p id={ayudaId} role="status" className="px-6 pb-2 text-xs text-muted">
-          {mensaje}
+          {/* El brillo conserva el texto como nodo: el estado y la descripción del campo lo leen igual. */}
+          {suficiente && buscando ? <TextoCargando>{mensaje}</TextoCargando> : mensaje}
         </p>
 
         <ul

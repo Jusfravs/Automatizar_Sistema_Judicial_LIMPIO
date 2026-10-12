@@ -599,6 +599,24 @@ html:active-view-transition-type(tema)::view-transition-new(root) {
   animation: var(--duracion-pagina) var(--curva-salida) both aparecer;
 }
 
+/*
+ * Navegación jerárquica (tipos "adelante"/"atras"; clases "pagina adelante"/"pagina atras"): la vista
+ * nueva entra 16px desde el lado hacia el que se avanza, con fundido. La vieja solo se desvanece
+ * (más corta): nunca se ven dos vistas desplazándose a la vez.
+ */
+@keyframes entrar-adelante {
+  from { opacity: 0; translate: 16px 0; }
+}
+@keyframes entrar-atras {
+  from { opacity: 0; translate: -16px 0; }
+}
+::view-transition-new(.pagina.adelante) {
+  animation: var(--duracion-lenta) var(--curva-salida) both entrar-adelante;
+}
+::view-transition-new(.pagina.atras) {
+  animation: var(--duracion-lenta) var(--curva-salida) both entrar-atras;
+}
+
 /* El resaltado de la navegación se desliza al nuevo ítem. Un clic no tiene impulso: sin rebote. */
 ::view-transition-group(.indicador) {
   animation-duration: var(--duracion-lenta);
@@ -665,6 +683,11 @@ html:active-view-transition-type(tema)::view-transition-new(root) {
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*) {
     animation-duration: 0s !important;
+  }
+  /* Sin desplazamiento: la navegación jerárquica queda en el fundido de siempre. */
+  ::view-transition-new(.pagina.adelante),
+  ::view-transition-new(.pagina.atras) {
+    animation-name: aparecer;
   }
 
   *,

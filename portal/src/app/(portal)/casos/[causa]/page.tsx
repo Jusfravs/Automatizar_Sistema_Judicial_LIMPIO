@@ -31,6 +31,7 @@ import {
 import { NumeroCausaCompartido } from '@/components/NumeroCausa'
 import DetalleActuacion from './DetalleActuacion'
 import RevisionForm from './RevisionForm'
+import { ProgresoLectura } from './ProgresoLectura'
 import { leerCausasPendientes, ubicarEnCola, type ColaRevision } from '@/lib/colaRevision'
 
 export const metadata = { title: 'Detalle de la causa' }
@@ -144,6 +145,7 @@ export default async function CasoPage({ params, searchParams }: Props) {
 
   return (
     <div className="space-y-6">
+      <ProgresoLectura />
       <PageHeader
         titulo={<NumeroCausaCompartido numero={expediente.numero_causa}>{expediente.numero_causa}</NumeroCausaCompartido>}
         tituloMono

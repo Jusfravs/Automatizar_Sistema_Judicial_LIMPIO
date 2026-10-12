@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useIsPresent, useReducedMotion, type TargetAndTransition } from 'motion/react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { XLSX_MIME, MAX_FILE_SIZE, MAX_ARCHIVO_NOMBRE, MAX_HOJA, FILTROS_DEFAULTS, MODO_ETIQUETAS, traducirErrorInterno } from '@/lib/lotes'
@@ -11,6 +12,7 @@ import { Checkbox } from '@/components/ui/Checkbox'
 import { Field, a11yCampo } from '@/components/ui/Field'
 import { Input } from '@/components/ui/Input'
 import { ZonaArchivo } from '@/components/ui/ZonaArchivo'
+import { TransitionPanel } from '@/components/registro/motion/transition-panel'
 import { FOCO } from '@/components/ui/estilos'
 import { cx } from '@/lib/cx'
 
@@ -46,6 +48,34 @@ const CAMPOS_POR_PASO: Record<number, CampoConError[]> = {
   4: [],
 }
 
+/** 1 = avanzar (el panel entra desde la derecha), -1 = retroceder (entra desde la izquierda). */
+type Direccion = 1 | -1
+
+// Movimiento del cambio de paso (docs/system.md 3): entrada --duracion-lenta, salida más corta,
+// ambas con --curva-salida. Solo transform y opacidad.
+const CURVA_SALIDA = [0.23, 1, 0.32, 1] as const
+const ENTRADA_PASO = { duration: 0.24, ease: CURVA_SALIDA }
+const SALIDA_PASO = { duration: 0.16, ease: CURVA_SALIDA }
+const DESPLAZAMIENTO_ENTRADA = 16
+const DESPLAZAMIENTO_SALIDA = 8
+
+/** Variantes del panel. Con movimiento reducido se conserva el fundido y se quita el desplazamiento. */
+function variantesPaso(reducido: boolean) {
+  const mover = (px: number) => `translateX(${reducido ? 0 : px}px)`
+  return {
+    enter: (direccion: Direccion): TargetAndTransition => ({
+      opacity: 0,
+      transform: mover(direccion * DESPLAZAMIENTO_ENTRADA),
+    }),
+    center: { opacity: 1, transform: mover(0), transition: ENTRADA_PASO },
+    exit: (direccion: Direccion): TargetAndTransition => ({
+      opacity: 0,
+      transform: mover(-direccion * DESPLAZAMIENTO_SALIDA),
+      transition: SALIDA_PASO,
+    }),
+  }
+}
+
 function pasoDeCampo(campo: CampoConError): number {
   return Number(Object.entries(CAMPOS_POR_PASO).find(([, campos]) => campos.includes(campo))?.[0] ?? 1)
 }
@@ -70,18 +100,26 @@ export default function NuevoLoteForm() {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<CampoConError, string>>>({})
   // Asistente: paso visible y pasos ya validados (se puede volver a ellos desde el indicador).
   const [paso, setPaso] = useState(1)
+  const [direccion, setDireccion] = useState<Direccion>(1)
   const [completados, setCompletados] = useState<Set<number>>(() => new Set())
-  const tituloPaso = useRef<HTMLHeadingElement>(null)
+  const idTitulo = useId()
   const primerRender = useRef(true)
+  const reducido = useReducedMotion() === true
 
-  // Al cambiar de paso, el foco va al título del panel (no en la carga inicial).
+  // Al cambiar de paso, el foco va al título del panel (no en la carga inicial). Se busca por id y
+  // no por ref: durante la salida conviven el panel viejo y el nuevo, y ambos tienen su título.
   useEffect(() => {
     if (primerRender.current) {
       primerRender.current = false
       return
     }
-    tituloPaso.current?.focus()
-  }, [paso])
+    document.getElementById(`${idTitulo}-${paso}`)?.focus()
+  }, [paso, idTitulo])
+
+  const moverAPaso = (destino: number) => {
+    setDireccion(destino > paso ? 1 : -1)
+    setPaso(destino)
+  }
 
   const esSolo = modo === 'solo'
   const trabajadoresEfectivos = esSolo ? 1 : trabajadores
@@ -129,7 +167,7 @@ export default function NuevoLoteForm() {
 
   const irAPaso = (destino: number) => {
     setError('')
-    setPaso(destino)
+    moverAPaso(destino)
   }
 
   const clearFieldError = (name: string) => {
@@ -199,7 +237,7 @@ export default function NuevoLoteForm() {
         return
       }
       setCompletados((prev) => new Set(prev).add(paso))
-      setPaso(paso + 1)
+      moverAPaso(paso + 1)
       return
     }
 
@@ -208,7 +246,7 @@ export default function NuevoLoteForm() {
     const primerCampo = ORDEN_CAMPOS.find((campo) => errores[campo])
     if (primerCampo) {
       setError('Revisa los campos marcados')
-      setPaso(pasoDeCampo(primerCampo))
+      moverAPaso(pasoDeCampo(primerCampo))
       return
     }
 
@@ -286,232 +324,254 @@ export default function NuevoLoteForm() {
       <IndicadorPasos actual={paso} completados={completados} alElegir={irAPaso} deshabilitado={loading} />
 
       <div className="rounded-tarjeta bg-surface p-4 shadow-tarjeta sm:p-6">
-        {/* Panel del paso: el título recibe el foco al cambiar, así el lector anuncia dónde está. */}
-        <div key={paso} className="animate-aparecer space-y-5">
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted">
-              Paso {paso} de {PASOS.length}
-            </p>
-            <h2 ref={tituloPaso} tabIndex={-1} className="text-lg font-semibold text-fg outline-none">
-              {PASOS[paso - 1].titulo}
-            </h2>
-            <p className="text-sm text-muted text-pretty">{PASOS[paso - 1].descripcion}</p>
-          </div>
-
-          {paso === 1 && (
-            <div className="space-y-4">
-              <Field label="Archivo .xlsx" htmlFor="file" error={fieldErrors.file}>
-                <ZonaArchivo
-                  {...a11yCampo('file', { error: fieldErrors.file })}
-                  archivo={file}
-                  alCambiar={(f) => {
-                    setFile(f)
-                    setFieldErrors((prev) => ({ ...prev, file: f ? validarArchivo(f) : undefined }))
-                  }}
-                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  required
-                  disabled={loading}
-                  indicacion="Solo .xlsx, máximo 20 MB"
-                />
-              </Field>
-              <Field label="Hoja (opcional)" htmlFor="hoja" ayuda="Si la dejas vacía se usa la primera hoja." error={fieldErrors.hoja}>
-                <Input
-                  {...a11yCampo('hoja', { ayuda: true, error: fieldErrors.hoja })}
-                  value={hoja}
-                  onChange={(e) => {
-                    setHoja(e.target.value)
-                    clearFieldError('hoja')
-                  }}
-                  maxLength={MAX_HOJA}
-                  disabled={loading}
-                  className="max-w-xs"
-                />
-              </Field>
-            </div>
-          )}
-
-          {paso === 2 && (
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Sucursal" htmlFor="sucursal" error={fieldErrors.sucursal}>
-                <Input
-                  {...a11yCampo('sucursal', { error: fieldErrors.sucursal })}
-                  value={filtros.sucursal}
-                  onChange={(e) => {
-                    setFiltros({ ...filtros, sucursal: e.target.value })
-                    clearFieldError('sucursal')
-                  }}
-                  onBlur={() => validarAlSalir('sucursal', filtros.sucursal)}
-                  disabled={loading}
-                />
-              </Field>
-              <Field label="Oficina" htmlFor="oficina" ayuda="Vacía = todas.">
-                <Input
-                  {...a11yCampo('oficina', { ayuda: true })}
-                  value={filtros.oficina}
-                  onChange={(e) => setFiltros({ ...filtros, oficina: e.target.value })}
-                  disabled={loading}
-                />
-              </Field>
-              <Field label="Estado judicial" htmlFor="estado_judicial">
-                <Input
-                  id="estado_judicial"
-                  value={filtros.estado_judicial}
-                  onChange={(e) => setFiltros({ ...filtros, estado_judicial: e.target.value })}
-                  disabled={loading}
-                />
-              </Field>
-            </div>
-          )}
-
-          {paso === 3 && (
-            <div className="space-y-5">
-              <fieldset>
-                <legend className="mb-2 text-sm font-medium text-muted">Qué causas consultar</legend>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {MODOS.map((m) => (
-                    <label
-                      key={m}
-                      className={cx(
-                        'flex cursor-pointer flex-col gap-1 rounded-control border p-3 transition-colors',
-                        'has-[:checked]:border-primary has-[:checked]:bg-surface-2',
-                        'border-strong hover:bg-surface-2 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus',
-                        loading && 'cursor-not-allowed opacity-70',
-                      )}
-                    >
-                      <span className="flex items-center gap-2 text-sm font-semibold text-fg">
-                        <input
-                          type="radio"
-                          name="modo"
-                          value={m}
-                          checked={modo === m}
-                          onChange={() => {
-                            setModo(m)
-                            clearFieldError('parametro')
-                          }}
-                          disabled={loading}
-                          className="size-4 shrink-0 accent-primary"
-                        />
-                        {MODO_ETIQUETAS[m]}
-                      </span>
-                      <span className="text-xs text-muted text-pretty">{DESCRIPCION_MODO[m]}</span>
-                    </label>
-                  ))}
+        {/*
+          Panel del paso: entra desde la derecha al avanzar y desde la izquierda al retroceder.
+          El título recibe el foco al cambiar, así el lector anuncia dónde está.
+        */}
+        <TransitionPanel activeIndex={paso - 1} custom={direccion} variants={variantesPaso(reducido)}>
+          {PASOS.map((p, i) =>
+            i + 1 === paso ? (
+              <PanelPaso key={p.corto}>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted">
+                    Paso {paso} de {PASOS.length}
+                  </p>
+                  <h2 id={`${idTitulo}-${paso}`} tabIndex={-1} className="text-lg font-semibold text-fg outline-none">
+                    {PASOS[paso - 1].titulo}
+                  </h2>
+                  <p className="text-sm text-muted text-pretty">{PASOS[paso - 1].descripcion}</p>
                 </div>
-              </fieldset>
 
-              {modo === 'pendientes' && (
-                <Alert tono="atencion" titulo="Corrida larga">
-                  Se consultarán todas las causas pendientes del Excel. Puede tardar varias horas y consume saldo de CAPTCHA.
-                </Alert>
-              )}
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                {modo !== 'pendientes' && (
-                  <Field
-                    label={modo === 'lote' ? 'Número de causas' : 'Número de causa'}
-                    htmlFor="parametro"
-                    ayuda={ayudaParametro}
-                    error={fieldErrors.parametro}
-                  >
-                    <Input
-                      {...a11yCampo('parametro', { ayuda: true, error: fieldErrors.parametro })}
-                      value={parametro}
-                      onChange={(e) => {
-                        setParametro(e.target.value)
-                        clearFieldError('parametro')
-                      }}
-                      onBlur={() => validarAlSalir('parametro', parametro)}
-                      inputMode={modo === 'lote' ? 'numeric' : undefined}
-                      maxLength={modo === 'lote' ? 3 : 60}
-                      disabled={loading}
-                      className={modo === 'solo' ? 'font-mono' : undefined}
-                    />
-                  </Field>
+                {paso === 1 && (
+                  <div className="space-y-4">
+                    <Field label="Archivo .xlsx" htmlFor="file" error={fieldErrors.file}>
+                      <ZonaArchivo
+                        {...a11yCampo('file', { error: fieldErrors.file })}
+                        archivo={file}
+                        alCambiar={(f) => {
+                          setFile(f)
+                          setFieldErrors((prev) => ({ ...prev, file: f ? validarArchivo(f) : undefined }))
+                        }}
+                        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        required
+                        disabled={loading}
+                        indicacion="Solo .xlsx, máximo 20 MB"
+                      />
+                    </Field>
+                    <Field label="Hoja (opcional)" htmlFor="hoja" ayuda="Si la dejas vacía se usa la primera hoja." error={fieldErrors.hoja}>
+                      <Input
+                        {...a11yCampo('hoja', { ayuda: true, error: fieldErrors.hoja })}
+                        value={hoja}
+                        onChange={(e) => {
+                          setHoja(e.target.value)
+                          clearFieldError('hoja')
+                        }}
+                        maxLength={MAX_HOJA}
+                        disabled={loading}
+                        className="max-w-xs"
+                      />
+                    </Field>
+                  </div>
                 )}
-                <Field
-                  label="Trabajadores (1 a 4)"
-                  htmlFor="trabajadores"
-                  ayuda={esSolo ? 'Una sola causa se procesa con 1 trabajador.' : 'Más trabajadores terminan antes.'}
-                  error={fieldErrors.trabajadores}
-                >
-                  <Input
-                    {...a11yCampo('trabajadores', { ayuda: true, error: fieldErrors.trabajadores })}
-                    type="number"
-                    min={1}
-                    max={4}
-                    value={trabajadoresEfectivos}
-                    onChange={(e) => {
-                      setTrabajadores(parseInt(e.target.value, 10) || 1)
-                      clearFieldError('trabajadores')
-                    }}
-                    disabled={loading || esSolo}
-                    className="max-w-24 tabular-nums"
-                  />
-                </Field>
-              </div>
 
-              {modo !== 'solo' && (
-                <Checkbox
-                  checked={continuar}
-                  onChange={(e) => setContinuar(e.target.checked)}
-                  disabled={loading}
-                  label="Omitir causas ya procesadas (continuar)"
-                />
-              )}
-            </div>
+                {paso === 2 && (
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <Field label="Sucursal" htmlFor="sucursal" error={fieldErrors.sucursal}>
+                      <Input
+                        {...a11yCampo('sucursal', { error: fieldErrors.sucursal })}
+                        value={filtros.sucursal}
+                        onChange={(e) => {
+                          setFiltros({ ...filtros, sucursal: e.target.value })
+                          clearFieldError('sucursal')
+                        }}
+                        onBlur={() => validarAlSalir('sucursal', filtros.sucursal)}
+                        disabled={loading}
+                      />
+                    </Field>
+                    <Field label="Oficina" htmlFor="oficina" ayuda="Vacía = todas.">
+                      <Input
+                        {...a11yCampo('oficina', { ayuda: true })}
+                        value={filtros.oficina}
+                        onChange={(e) => setFiltros({ ...filtros, oficina: e.target.value })}
+                        disabled={loading}
+                      />
+                    </Field>
+                    <Field label="Estado judicial" htmlFor="estado_judicial">
+                      <Input
+                        id="estado_judicial"
+                        value={filtros.estado_judicial}
+                        onChange={(e) => setFiltros({ ...filtros, estado_judicial: e.target.value })}
+                        disabled={loading}
+                      />
+                    </Field>
+                  </div>
+                )}
+
+                {paso === 3 && (
+                  <div className="space-y-5">
+                    <fieldset>
+                      <legend className="mb-2 text-sm font-medium text-muted">Qué causas consultar</legend>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        {MODOS.map((m) => (
+                          <label
+                            key={m}
+                            className={cx(
+                              'flex cursor-pointer flex-col gap-1 rounded-control border p-3 transition-colors',
+                              'has-[:checked]:border-primary has-[:checked]:bg-surface-2',
+                              'border-strong hover:bg-surface-2 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus',
+                              loading && 'cursor-not-allowed opacity-70',
+                            )}
+                          >
+                            <span className="flex items-center gap-2 text-sm font-semibold text-fg">
+                              <input
+                                type="radio"
+                                name="modo"
+                                value={m}
+                                checked={modo === m}
+                                onChange={() => {
+                                  setModo(m)
+                                  clearFieldError('parametro')
+                                }}
+                                disabled={loading}
+                                className="size-4 shrink-0 accent-primary"
+                              />
+                              {MODO_ETIQUETAS[m]}
+                            </span>
+                            <span className="text-xs text-muted text-pretty">{DESCRIPCION_MODO[m]}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+
+                    {modo === 'pendientes' && (
+                      <Alert tono="atencion" titulo="Corrida larga">
+                        Se consultarán todas las causas pendientes del Excel. Puede tardar varias horas y consume saldo de CAPTCHA.
+                      </Alert>
+                    )}
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {modo !== 'pendientes' && (
+                        <Field
+                          label={modo === 'lote' ? 'Número de causas' : 'Número de causa'}
+                          htmlFor="parametro"
+                          ayuda={ayudaParametro}
+                          error={fieldErrors.parametro}
+                        >
+                          <Input
+                            {...a11yCampo('parametro', { ayuda: true, error: fieldErrors.parametro })}
+                            value={parametro}
+                            onChange={(e) => {
+                              setParametro(e.target.value)
+                              clearFieldError('parametro')
+                            }}
+                            onBlur={() => validarAlSalir('parametro', parametro)}
+                            inputMode={modo === 'lote' ? 'numeric' : undefined}
+                            maxLength={modo === 'lote' ? 3 : 60}
+                            disabled={loading}
+                            className={modo === 'solo' ? 'font-mono' : undefined}
+                          />
+                        </Field>
+                      )}
+                      <Field
+                        label="Trabajadores (1 a 4)"
+                        htmlFor="trabajadores"
+                        ayuda={esSolo ? 'Una sola causa se procesa con 1 trabajador.' : 'Más trabajadores terminan antes.'}
+                        error={fieldErrors.trabajadores}
+                      >
+                        <Input
+                          {...a11yCampo('trabajadores', { ayuda: true, error: fieldErrors.trabajadores })}
+                          type="number"
+                          min={1}
+                          max={4}
+                          value={trabajadoresEfectivos}
+                          onChange={(e) => {
+                            setTrabajadores(parseInt(e.target.value, 10) || 1)
+                            clearFieldError('trabajadores')
+                          }}
+                          disabled={loading || esSolo}
+                          className="max-w-24 tabular-nums"
+                        />
+                      </Field>
+                    </div>
+
+                    {modo !== 'solo' && (
+                      <Checkbox
+                        checked={continuar}
+                        onChange={(e) => setContinuar(e.target.checked)}
+                        disabled={loading}
+                        label="Omitir causas ya procesadas (continuar)"
+                      />
+                    )}
+                  </div>
+                )}
+
+                {paso === 4 && (
+                  <dl className="divide-y divide-subtle rounded-control border border-subtle text-sm">
+                    <FilaResumen termino="Archivo" alEditar={() => irAPaso(1)} deshabilitado={loading}>
+                      {file ? file.name : 'Sin elegir'}
+                      <span className="block text-xs font-normal text-muted">Hoja: {hoja.trim() || 'primera hoja'}</span>
+                    </FilaResumen>
+                    <FilaResumen termino="Filtros" alEditar={() => irAPaso(2)} deshabilitado={loading}>
+                      Sucursal: {filtros.sucursal.trim() || '—'} · Oficina: {filtros.oficina.trim() || 'todas'} · Estado judicial:{' '}
+                      {filtros.estado_judicial.trim() || '—'}
+                    </FilaResumen>
+                    <FilaResumen termino="Modo" alEditar={() => irAPaso(3)} deshabilitado={loading}>
+                      {MODO_ETIQUETAS[modo]}
+                      {modo !== 'pendientes' && parametro.trim() ? ` · ${parametro.trim()}` : ''}
+                      <span className="block text-xs font-normal text-muted">
+                        {trabajadoresEfectivos} {trabajadoresEfectivos === 1 ? 'trabajador' : 'trabajadores'} · Omitir procesadas:{' '}
+                        {continuarEfectivo ? 'sí' : 'no'}
+                      </span>
+                    </FilaResumen>
+                  </dl>
+                )}
+
+                <div role="status">
+                  {error ? (
+                    <Alert tono="peligro" rol="alert">
+                      {error}
+                    </Alert>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 border-t border-subtle pt-5">
+                  {paso < PASOS.length ? (
+                    <Button type="submit" disabled={loading}>
+                      Siguiente
+                    </Button>
+                  ) : (
+                    <Button type="submit" cargando={loading}>
+                      {loading ? 'Creando lote…' : 'Crear lote'}
+                    </Button>
+                  )}
+                  {paso > 1 ? (
+                    <Button variante="secundario" onClick={() => irAPaso(paso - 1)} disabled={loading}>
+                      Atrás
+                    </Button>
+                  ) : null}
+                  <ButtonLink href="/lotes" variante="fantasma" className="sm:ml-auto">
+                    Cancelar
+                  </ButtonLink>
+                </div>
+              </PanelPaso>
+            ) : null,
           )}
-
-          {paso === 4 && (
-            <dl className="divide-y divide-subtle rounded-control border border-subtle text-sm">
-              <FilaResumen termino="Archivo" alEditar={() => irAPaso(1)} deshabilitado={loading}>
-                {file ? file.name : 'Sin elegir'}
-                <span className="block text-xs font-normal text-muted">Hoja: {hoja.trim() || 'primera hoja'}</span>
-              </FilaResumen>
-              <FilaResumen termino="Filtros" alEditar={() => irAPaso(2)} deshabilitado={loading}>
-                Sucursal: {filtros.sucursal.trim() || '—'} · Oficina: {filtros.oficina.trim() || 'todas'} · Estado judicial:{' '}
-                {filtros.estado_judicial.trim() || '—'}
-              </FilaResumen>
-              <FilaResumen termino="Modo" alEditar={() => irAPaso(3)} deshabilitado={loading}>
-                {MODO_ETIQUETAS[modo]}
-                {modo !== 'pendientes' && parametro.trim() ? ` · ${parametro.trim()}` : ''}
-                <span className="block text-xs font-normal text-muted">
-                  {trabajadoresEfectivos} {trabajadoresEfectivos === 1 ? 'trabajador' : 'trabajadores'} · Omitir procesadas:{' '}
-                  {continuarEfectivo ? 'sí' : 'no'}
-                </span>
-              </FilaResumen>
-            </dl>
-          )}
-
-          <div role="status">
-            {error ? (
-              <Alert tono="peligro" rol="alert">
-                {error}
-              </Alert>
-            ) : null}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 border-t border-subtle pt-5">
-            {paso < PASOS.length ? (
-              <Button type="submit" disabled={loading}>
-                Siguiente
-              </Button>
-            ) : (
-              <Button type="submit" cargando={loading}>
-                {loading ? 'Creando lote…' : 'Crear lote'}
-              </Button>
-            )}
-            {paso > 1 ? (
-              <Button variante="secundario" onClick={() => irAPaso(paso - 1)} disabled={loading}>
-                Atrás
-              </Button>
-            ) : null}
-            <ButtonLink href="/lotes" variante="fantasma" className="sm:ml-auto">
-              Cancelar
-            </ButtonLink>
-          </div>
-        </div>
+        </TransitionPanel>
       </div>
     </form>
+  )
+}
+
+/**
+ * Contenido de un paso. Mientras sale (convive un instante con el nuevo) queda inerte: no recibe
+ * clics, foco ni lectura, así nada del paso anterior se puede pulsar durante la transición.
+ */
+function PanelPaso({ children }: { children: ReactNode }) {
+  const presente = useIsPresent()
+  return (
+    <div inert={!presente} className="space-y-5">
+      {children}
+    </div>
   )
 }
 

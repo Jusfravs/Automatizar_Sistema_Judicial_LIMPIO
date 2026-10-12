@@ -85,10 +85,14 @@ export function AppShell({ nombre, rol, pendientes, children }: AppShellProps) {
       <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-7xl px-4 py-6 outline-none sm:px-6 lg:px-8 lg:py-8">
         {/*
           Transición entre pantallas. El shell vive en el layout de (portal), así que este límite
-          persiste. Solo las navegaciones con tipo "navegacion" (lib/transiciones) funden el
-          contenido; refrescos, filtros, orden y cargas tras el esqueleto son silenciosos.
+          persiste. Solo las navegaciones con tipo (lib/transiciones) animan el contenido: "navegacion"
+          funde, "adelante"/"atras" desplazan según la jerarquía. Refrescos, filtros, orden y cargas
+          tras el esqueleto son silenciosos.
         */}
-        <ViewTransition update={{ navegacion: 'pagina', default: 'none' }} default="none">
+        <ViewTransition
+          update={{ navegacion: 'pagina', adelante: 'pagina adelante', atras: 'pagina atras', default: 'none' }}
+          default="none"
+        >
           <div>{children}</div>
         </ViewTransition>
       </main>
