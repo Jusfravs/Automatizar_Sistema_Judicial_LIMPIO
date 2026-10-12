@@ -1,6 +1,6 @@
 'use client';
 import React, { useMemo } from 'react';
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/lib/utils';
 
 // Elementos permitidos, creados una sola vez fuera del render (react-hooks/static-components).
@@ -22,10 +22,16 @@ function TextShimmerComponent({
   spread = 2,
 }: TextShimmerProps) {
   const MotionComponent = ELEMENTOS[Component];
+  // Portal: con movimiento reducido, texto estático en --muted (sin bucle).
+  const reducido = useReducedMotion() === true;
 
   const dynamicSpread = useMemo(() => {
     return children.length * spread;
   }, [children, spread]);
+
+  if (reducido) {
+    return <MotionComponent className={cn('inline-block text-muted', className)}>{children}</MotionComponent>;
+  }
 
   return (
     <MotionComponent

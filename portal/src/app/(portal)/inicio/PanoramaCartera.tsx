@@ -120,6 +120,24 @@ function TablaDatos({
   )
 }
 
+/** Días sin consultas como rangos legibles: "13–22 sept, 24 sept, 26–29 sept". */
+function diasSinConsultas(dias: DiaActividad[]): string {
+  const rangos: [string, string][] = []
+  let inicio: string | null = null
+  let previo: string | null = null
+  for (const d of [...dias, { dia: '', causas: 1 }]) {
+    if (d.causas === 0) {
+      inicio ??= d.dia
+      previo = d.dia
+    } else if (inicio && previo) {
+      rangos.push([inicio, previo])
+      inicio = previo = null
+    }
+  }
+  const corta = (dia: string) => fechaCorta.format(new Date(`${dia}T00:00:00Z`))
+  return rangos.map(([a, b]) => (a === b ? corta(a) : `${corta(a)}–${corta(b)}`)).join(', ')
+}
+
 /** Reserva el alto del gráfico y lo monta al entrar en pantalla: en móvil, el crecimiento se ve. */
 function useVisible() {
   const ref = useRef<HTMLDivElement>(null)
@@ -257,7 +275,7 @@ function GraficoActividad({ dias }: { dias: DiaActividad[] }) {
         {vacio ? null : (
           <TablaDatos
             titulo="Causas consultadas por día, días con actividad"
-            nota={`Los otros ${30 - conActividad} días del periodo no tuvieron consultas.`}
+            nota={conActividad < dias.length ? `Sin consultas: ${diasSinConsultas(dias)}.` : undefined}
             columnas={['Día', 'Causas']}
             filas={dias
               .filter((d) => d.causas > 0)

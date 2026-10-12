@@ -14,9 +14,11 @@ type Hijo = ReactElement<{
   'data-checked'?: string;
   className?: string;
   children?: React.ReactNode;
-  onClick?: () => void;
-  onMouseEnter?: () => void;
-  onMouseLeave?: () => void;
+  onClick?: (e: React.MouseEvent<HTMLElement>) => void;
+  onMouseEnter?: (e: React.MouseEvent<HTMLElement>) => void;
+  onMouseLeave?: (e: React.MouseEvent<HTMLElement>) => void;
+  onFocus?: (e: React.FocusEvent<HTMLElement>) => void;
+  onBlur?: (e: React.FocusEvent<HTMLElement>) => void;
 }>;
 
 export type AnimatedBackgroundProps = {
@@ -58,13 +60,33 @@ export function AnimatedBackground({
   return Children.map(children, (child: Hijo, index) => {
     const id = child.props['data-id'];
 
+    // Portal: se componen con los manejadores propios del hijo (no se pierden) y, en modo hover,
+    // el foco de teclado equivale al puntero.
+    const p = child.props;
     const interactionProps = enableHover
       ? {
-          onMouseEnter: () => handleSetActiveId(id),
-          onMouseLeave: () => handleSetActiveId(null),
+          onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
+            p.onMouseEnter?.(e);
+            handleSetActiveId(id);
+          },
+          onMouseLeave: (e: React.MouseEvent<HTMLElement>) => {
+            p.onMouseLeave?.(e);
+            handleSetActiveId(null);
+          },
+          onFocus: (e: React.FocusEvent<HTMLElement>) => {
+            p.onFocus?.(e);
+            handleSetActiveId(id);
+          },
+          onBlur: (e: React.FocusEvent<HTMLElement>) => {
+            p.onBlur?.(e);
+            handleSetActiveId(null);
+          },
         }
       : {
-          onClick: () => handleSetActiveId(id),
+          onClick: (e: React.MouseEvent<HTMLElement>) => {
+            p.onClick?.(e);
+            if (!e.defaultPrevented) handleSetActiveId(id);
+          },
         };
 
     return cloneElement(

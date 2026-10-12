@@ -361,7 +361,7 @@ export default async function InicioPage() {
       {panorama ? (
         <PanoramaCartera {...panorama} />
       ) : (
-        <Alert tono="atencion">No se pudo cargar el panorama de la cartera. Prueba a actualizar en unos minutos.</Alert>
+        <Alert tono="atencion">No se pudo cargar el panorama de la cartera. Pulsa «Actualizar ahora» para reintentar.</Alert>
       )}
     </div>
   )

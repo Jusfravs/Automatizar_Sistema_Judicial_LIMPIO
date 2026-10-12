@@ -1,6 +1,6 @@
 'use client';
 import { cn } from '@/lib/utils';
-import { motion, Transition } from 'motion/react';
+import { motion, Transition, useReducedMotion } from 'motion/react';
 
 export type BorderTrailProps = {
   className?: string;
@@ -17,11 +17,15 @@ export function BorderTrail({
   onAnimationComplete,
   style,
 }: BorderTrailProps) {
+  // Portal: con movimiento reducido no hay trazo (es decorativo).
+  const reducido = useReducedMotion() === true;
   const defaultTransition: Transition = {
     repeat: Infinity,
     duration: 5,
     ease: 'linear',
   };
+
+  if (reducido) return null;
 
   return (
     <div className='pointer-events-none absolute inset-0 rounded-[inherit] border border-transparent [mask-clip:padding-box,border-box] [mask-composite:intersect] [mask-image:linear-gradient(transparent,transparent),linear-gradient(black,black)]'>
