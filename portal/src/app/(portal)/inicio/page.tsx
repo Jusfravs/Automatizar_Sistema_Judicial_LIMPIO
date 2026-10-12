@@ -19,10 +19,12 @@ import { formatFecha } from '@/lib/fechas'
 import { leerEstadoServidor } from '@/lib/servidor'
 import { FOCO } from '@/components/ui/estilos'
 import { cx } from '@/lib/cx'
-import { NAVEGACION } from '@/lib/transiciones'
+import { ADELANTE, NAVEGACION } from '@/lib/transiciones'
 import type { Tono } from '@/lib/tonos'
 import RefrescoInicio from './RefrescoInicio'
 import { PulsoServidor } from './PulsoServidor'
+import { TrazoEnCurso } from './TrazoEnCurso'
+import { PanoramaCartera, type DiaActividad, type EtapaResumen } from './PanoramaCartera'
 
 export const metadata = { title: 'Inicio' }
 
@@ -180,15 +182,56 @@ function contarIndicadores(supabase: Supabase, ahora: number) {
   ])
 }
 
+// Nombres legibles de las etapas del catálogo ("2 CITACION"), por su número de orden procesal.
+const NOMBRES_ETAPA: Record<number, { corta: string; nombre: string }> = {
+  1: { corta: 'Presentación', nombre: 'Presentación y calificación' },
+  2: { corta: 'Citación', nombre: 'Citación' },
+  3: { corta: 'Contestación', nombre: 'Contestación' },
+  4: { corta: 'Audiencia', nombre: 'Audiencia' },
+  5: { corta: 'Sentencia', nombre: 'Sentencia' },
+  6: { corta: 'Liquidación', nombre: 'Liquidación y embargo' },
+}
+
+/** Datos de "Panorama de la cartera". null si alguna consulta falló: la sección no se muestra. */
+async function consultarPanorama(supabase: Supabase) {
+  const [etapas, actividad] = await Promise.all([
+    supabase.from('v_resumen_etapas_actuales').select('eta_id, etapa, causas'),
+    supabase.from('v_actividad_diaria').select('dia, causas').order('dia'),
+  ])
+  if (etapas.error) console.error('No se pudo cargar el resumen por etapa:', etapas.error.message)
+  if (actividad.error) console.error('No se pudo cargar la actividad diaria:', actividad.error.message)
+  if (etapas.error || actividad.error) return null
+  let sinEtapa = 0
+  const porEtapa: EtapaResumen[] = []
+  for (const fila of etapas.data) {
+    if (fila.eta_id === null) {
+      sinEtapa += fila.causas ?? 0
+      continue
+    }
+    // Una etapa nueva del catálogo sin número de orden va al final (por su id) con su nombre en
+    // formato de oración: "EJECUCION FORZOSA" → "Ejecucion forzosa".
+    const numero = Number.parseInt(fila.etapa ?? '', 10)
+    const orden = Number.isNaN(numero) ? 100 + fila.eta_id : numero
+    const texto = (fila.etapa ?? '').replace(/^\d+\s*/, '').toLowerCase()
+    const oracion = texto.charAt(0).toUpperCase() + texto.slice(1)
+    const nombres = NOMBRES_ETAPA[orden] ?? { corta: oracion, nombre: oracion }
+    porEtapa.push({ orden, ...nombres, causas: fila.causas ?? 0 })
+  }
+  porEtapa.sort((a, b) => a.orden - b.orden)
+  const dias: DiaActividad[] = actividad.data.flatMap((d) => (d.dia ? [{ dia: d.dia, causas: d.causas ?? 0 }] : []))
+  return { etapas: porEtapa, sinEtapa, dias }
+}
+
 /** Todas las consultas del resumen con un mismo instante de referencia (fuera del render). */
 async function consultarResumen(supabase: Supabase) {
   const ahora = Date.now()
-  const [conteos, enCurso, servidor] = await Promise.all([
+  const [conteos, enCurso, servidor, panorama] = await Promise.all([
     contarIndicadores(supabase, ahora),
     lotesEnCurso(supabase, ahora),
     leerEstadoServidor(supabase, ahora),
+    consultarPanorama(supabase),
   ])
-  return { conteos, enCurso, servidor, ahora, consultadoEn: new Date(ahora).toISOString() }
+  return { conteos, enCurso, servidor, panorama, ahora, consultadoEn: new Date(ahora).toISOString() }
 }
 
 export default async function InicioPage() {
@@ -197,6 +240,7 @@ export default async function InicioPage() {
     conteos: [activos, completados, completadosAntes, pendientes, errorFinal],
     enCurso,
     servidor,
+    panorama,
     ahora,
     consultadoEn,
   } = await consultarResumen(supabase)
@@ -204,6 +248,10 @@ export default async function InicioPage() {
   const nPendientes = leerConteo('las revisiones pendientes', pendientes)
   const nCompletados = leerConteo('los lotes completados', completados)
   const nCompletadosAntes = leerConteo('los lotes completados la semana anterior', completadosAntes)
+  // El trazo indica trabajo vivo: un lote EN_CURSO y el servidor procesando de verdad (un lote que
+  // quedó EN_CURSO con el servidor esperando o caído no debe parecer activo).
+  const procesando =
+    servidor.tipo === 'activo' && servidor.procesando && enCurso.lotes.some((l) => l.estado === 'EN_CURSO')
   const nuevoLote = (
     <ButtonLink href="/lotes/nuevo" transitionTypes={NAVEGACION}>
       Nuevo lote
@@ -251,7 +299,8 @@ export default async function InicioPage() {
         />
       </div>
 
-      <Card>
+      <Card className="relative">
+        {procesando ? <TrazoEnCurso /> : null}
         <CardHeader
           titulo="Lotes en curso"
           acciones={
@@ -281,7 +330,7 @@ export default async function InicioPage() {
                       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                         <Link
                           href={`/lotes/${lote.id}`}
-                          transitionTypes={NAVEGACION}
+                          transitionTypes={ADELANTE}
                           className={`min-w-0 truncate rounded-control font-medium text-fg underline-offset-2 hover:text-primary hover:underline ${FOCO}`}
                         >
                           {lote.archivo_nombre}
@@ -308,6 +357,12 @@ export default async function InicioPage() {
           )}
         </CardBody>
       </Card>
+
+      {panorama ? (
+        <PanoramaCartera {...panorama} />
+      ) : (
+        <Alert tono="atencion">No se pudo cargar el panorama de la cartera. Pulsa «Actualizar ahora» para reintentar.</Alert>
+      )}
     </div>
   )
 }

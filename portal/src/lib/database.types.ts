@@ -932,6 +932,13 @@ export type Database = {
       }
     }
     Views: {
+      v_actividad_diaria: {
+        Row: {
+          causas: number | null
+          dia: string | null
+        }
+        Relationships: []
+      }
       v_casos_revision_manual: {
         Row: {
           actor: string | null
@@ -1108,6 +1115,14 @@ export type Database = {
           total_actuaciones?: number | null
           ultima_etapa?: string | null
           ultima_fase?: string | null
+        }
+        Relationships: []
+      }
+      v_resumen_etapas_actuales: {
+        Row: {
+          causas: number | null
+          eta_id: number | null
+          etapa: string | null
         }
         Relationships: []
       }

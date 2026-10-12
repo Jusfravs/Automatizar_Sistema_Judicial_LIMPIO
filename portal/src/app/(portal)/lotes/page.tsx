@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { NAVEGACION } from '@/lib/transiciones'
+import { ADELANTE } from '@/lib/transiciones'
 import { createClient } from '@/lib/supabase/server'
 import {
   Alert,
@@ -25,6 +25,7 @@ import {
   MODO_ETIQUETAS,
   type EstadoEjecucion,
 } from '@/lib/lotes'
+import { FiltrosEstado, type OpcionEstado } from './FiltrosEstado'
 
 export const metadata = { title: 'Lotes' }
 
@@ -41,6 +42,12 @@ function truncate(str: string | null, max: number): string {
 }
 
 const LOTES_POR_PAGINA = 25
+
+const TODOS = 'todos'
+const FILTROS_ESTADO: OpcionEstado[] = [
+  { id: TODOS, etiqueta: 'Todos', href: '/lotes' },
+  ...Object.entries(ESTADO_ETIQUETAS).map(([clave, etiqueta]) => ({ id: clave, etiqueta, href: `/lotes?estado=${clave}` })),
+]
 
 async function getSolicitudes(supabase: Supabase, estado: string | null, pagina: number) {
   const desde = (pagina - 1) * LOTES_POR_PAGINA
@@ -85,22 +92,6 @@ async function getAvance(supabase: Supabase, solicitudes: SolicitudLote[]) {
   return avance
 }
 
-function FiltroEstado({ href, activo, children }: { href: string; activo: boolean; children: string }) {
-  return (
-    <Link
-      href={href}
-      aria-current={activo ? 'page' : undefined}
-      className={cx(
-        'rounded-full border px-3 py-1 text-sm font-medium transition-colors',
-        FOCO,
-        activo ? 'border-primary bg-primary text-on-primary' : 'border-subtle bg-surface text-muted hover:text-fg',
-      )}
-    >
-      {children}
-    </Link>
-  )
-}
-
 export default async function LotesPage({
   searchParams,
 }: {
@@ -127,7 +118,7 @@ export default async function LotesPage({
       principal: true,
       celda: (s) => (
         <div className="min-w-0">
-          <Link href={`/lotes/${s.id}`} transitionTypes={NAVEGACION} className={cx('rounded-sm font-medium text-fg underline-offset-2 transition-colors [overflow-wrap:anywhere] hover:text-primary hover:underline', FOCO)}>
+          <Link href={`/lotes/${s.id}`} transitionTypes={ADELANTE} className={cx('rounded-sm font-medium text-fg underline-offset-2 transition-colors [overflow-wrap:anywhere] hover:text-primary hover:underline', FOCO)}>
             {s.archivo_nombre}
           </Link>
           <p className="text-xs text-muted">
@@ -182,16 +173,7 @@ export default async function LotesPage({
     <div className="space-y-6">
       <PageHeader titulo="Lotes" descripcion="Consultas masivas en e-SATJE a partir de un Excel" acciones={nuevoLote} />
 
-      <nav aria-label="Filtrar por estado" className="flex flex-wrap gap-2">
-        <FiltroEstado href="/lotes" activo={estado === null}>
-          Todos
-        </FiltroEstado>
-        {Object.entries(ESTADO_ETIQUETAS).map(([clave, etiqueta]) => (
-          <FiltroEstado key={clave} href={`/lotes?estado=${clave}`} activo={estado === clave}>
-            {etiqueta}
-          </FiltroEstado>
-        ))}
-      </nav>
+      <FiltrosEstado opciones={FILTROS_ESTADO} activo={estado ?? TODOS} />
 
       {error ? (
         <Alert tono="peligro" rol="alert">

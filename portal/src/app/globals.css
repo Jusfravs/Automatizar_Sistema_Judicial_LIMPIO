@@ -1,4 +1,22 @@
 @import "tailwindcss";
+/* Utilidades de animación y variantes (data-open, data-checked…) para componentes de registros shadcn. */
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/*
+ * `dark:` sigue el mismo tema que el portal: data-theme="dark" explícito, o el sistema en oscuro
+ * salvo que se haya elegido data-theme="light" (ver ThemeToggle y el script de layout.tsx).
+ */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
 
 /*
  * Sistema de diseño "Espoir institucional" del portal de Gestión Judicial.
@@ -371,6 +389,92 @@ body {
   font-optical-sizing: auto;
 }
 
+/* ---------- 3b. Puente shadcn ↔ Espoir (docs/system.md, sección 6) ---------- */
+/*
+ * Los componentes de registros shadcn (motion-primitives, Bklit, Skiper UI) usan nombres como
+ * bg-background, text-foreground, bg-popover o border-border. Aquí esos nombres apuntan a los
+ * tokens Espoir, así que heredan la identidad y el tema claro/oscuro sin tocar sus archivos.
+ *
+ * Dos nombres NO se puentean porque Espoir ya los usa con otro significado:
+ *   --muted  (Espoir: color de TEXTO secundario; shadcn: fondo suave)
+ *   --accent (Espoir: ámbar de relleno;          shadcn: fondo suave de menús)
+ * Al adoptar un componente que use bg-muted o bg-accent, cambiarlos por bg-surface-2.
+ */
+:root {
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--surface);
+  --card-foreground: var(--fg);
+  --popover: var(--surface);
+  --popover-foreground: var(--fg);
+  --primary-foreground: var(--on-primary);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--fg);
+  --muted-foreground: var(--muted);
+  --accent-foreground: var(--fg);
+  --destructive: var(--peligro-solid);
+  --border: var(--border-subtle);
+  --input: var(--border-strong);
+  --ring: var(--focus);
+  --radius: 8px; /* = --radius-tarjeta */
+  /* Series de gráficos (Bklit): colores Espoir con contraste verificado en ambos temas. */
+  --chart-1: var(--primary);
+  --chart-2: var(--info-solid);
+  --chart-3: var(--exito-solid);
+  --chart-4: var(--atencion-solid);
+  --chart-5: var(--peligro-solid);
+  /* Gráficos Bklit: ejes, rejilla, tooltip y marcadores con tokens Espoir (cambian con el tema). */
+  --chart-background: var(--surface);
+  --chart-foreground: var(--fg);
+  --chart-foreground-muted: var(--muted);
+  --chart-label: var(--muted);
+  --chart-grid: var(--border-subtle);
+  --chart-crosshair: var(--border-strong);
+  --chart-brush-border: var(--border-subtle);
+  --chart-line-primary: var(--primary);
+  --chart-line-secondary: var(--info-solid);
+  --chart-indicator-color: var(--primary);
+  --chart-indicator-secondary-color: var(--info-solid);
+  --chart-segment-background: var(--surface-2);
+  --chart-segment-line: var(--border-strong);
+  --chart-tooltip-background: var(--fg); /* tooltip invertido: alto contraste en ambos temas */
+  --chart-tooltip-foreground: var(--bg);
+  --chart-tooltip-muted: color-mix(in oklab, var(--bg) 70%, transparent);
+  --chart-marker-background: var(--surface-2);
+  --chart-marker-border: var(--border-strong);
+  --chart-marker-foreground: var(--fg);
+  --chart-marker-badge-background: var(--primary);
+  --chart-marker-badge-foreground: var(--on-primary);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-label: var(--chart-label);
+  --color-chart-tooltip-background: var(--chart-tooltip-background);
+  --color-chart-tooltip-foreground: var(--chart-tooltip-foreground);
+  --color-chart-tooltip-muted: var(--chart-tooltip-muted);
+  --font-heading: var(--font-sans);
+}
+
 /* ---------- 4. Movimiento (docs/system.md, sección 3) ---------- */
 
 @keyframes aparecer {
@@ -467,6 +571,26 @@ body {
 ::view-transition-new(root) {
   animation: none;
 }
+/*
+ * Cambio de tema (ThemeToggle, tipo "tema"): la vista nueva se revela con un círculo que crece desde
+ * el clic. Solo con este tipo se reactiva la raíz, que en navegación no se pinta.
+ */
+@keyframes revelar-tema {
+  from { clip-path: circle(0 at var(--tema-x, 50%) var(--tema-y, 50%)); }
+  to { clip-path: circle(var(--tema-r, 150%) at var(--tema-x, 50%) var(--tema-y, 50%)); }
+}
+html:active-view-transition-type(tema)::view-transition-old(root) {
+  display: block;
+  animation: none;
+}
+html:active-view-transition-type(tema)::view-transition-new(root) {
+  animation: revelar-tema 400ms var(--curva-salida) both;
+}
+/* Los transition-colors de la vista nueva no deben fundirse durante el revelado (ensucian el borde). */
+html:active-view-transition-type(tema) * {
+  transition: none !important;
+}
+
 ::view-transition-group(.pagina) {
   animation-duration: var(--duracion-pagina);
   animation-timing-function: var(--curva-salida);
@@ -477,6 +601,28 @@ body {
 }
 ::view-transition-new(.pagina) {
   animation: var(--duracion-pagina) var(--curva-salida) both aparecer;
+}
+
+/*
+ * Navegación jerárquica (tipos "adelante"/"atras"; clases "pagina adelante"/"pagina atras"): la vista
+ * nueva entra 16px desde el lado hacia el que se avanza, con fundido. La vieja solo se desvanece
+ * (más corta): nunca se ven dos vistas desplazándose a la vez.
+ */
+@keyframes entrar-adelante {
+  from { opacity: 0; translate: 16px 0; }
+}
+@keyframes entrar-atras {
+  from { opacity: 0; translate: -16px 0; }
+}
+::view-transition-group(.pagina.adelante),
+::view-transition-group(.pagina.atras) {
+  animation-duration: var(--duracion-lenta);
+}
+::view-transition-new(.pagina.adelante) {
+  animation: var(--duracion-lenta) var(--curva-salida) both entrar-adelante;
+}
+::view-transition-new(.pagina.atras) {
+  animation: var(--duracion-lenta) var(--curva-salida) both entrar-atras;
 }
 
 /* El resaltado de la navegación se desliza al nuevo ítem. Un clic no tiene impulso: sin rebote. */
@@ -545,6 +691,11 @@ body {
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*) {
     animation-duration: 0s !important;
+  }
+  /* Sin desplazamiento: la navegación jerárquica queda en el fundido de siempre. */
+  ::view-transition-new(.pagina.adelante),
+  ::view-transition-new(.pagina.atras) {
+    animation-name: aparecer;
   }
 
   *,

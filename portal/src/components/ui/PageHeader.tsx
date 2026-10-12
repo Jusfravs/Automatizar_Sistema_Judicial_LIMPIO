@@ -1,8 +1,7 @@
-import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { cx } from '@/lib/cx'
-import { NAVEGACION } from '@/lib/transiciones'
-import { FOCO } from './estilos'
+import { ATRAS } from '@/lib/transiciones'
+import { EnlaceSubrayado } from './EnlaceSubrayado'
 
 export type Miga = { etiqueta: string; href?: string }
 
@@ -29,13 +28,9 @@ export function PageHeader({ titulo, descripcion, acciones, migas, tituloMono = 
                 <li key={`${miga.etiqueta}-${i}`} className="flex min-w-0 items-center gap-1.5">
                   {i > 0 ? <span aria-hidden="true">/</span> : null}
                   {miga.href && !ultima ? (
-                    <Link
-                      href={miga.href}
-                      transitionTypes={NAVEGACION}
-                      className={cx('rounded-control underline-offset-4 transition-colors hover:text-fg hover:underline', FOCO)}
-                    >
+                    <EnlaceSubrayado href={miga.href} transitionTypes={ATRAS} className="transition-colors hover:text-fg">
                       {miga.etiqueta}
-                    </Link>
+                    </EnlaceSubrayado>
                   ) : (
                     <span aria-current={ultima ? 'page' : undefined} className={cx('truncate', ultima && 'font-medium text-fg')}>
                       {miga.etiqueta}

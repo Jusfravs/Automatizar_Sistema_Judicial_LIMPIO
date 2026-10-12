@@ -4,6 +4,7 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { TituloCausaCarga } from '@/components/TituloCausaCarga'
 import { TarjetaEstado } from '@/components/PantallaEstado'
+import { TextoCargando } from '@/components/TextoCargando'
 import { IconoAtencion, IconoBrujula } from '@/components/ui/iconos'
 
 /** Esqueleto de página para loading.tsx: cabecera, una fila de tarjetas y un bloque de contenido. */
@@ -35,9 +36,19 @@ export function CargandoPagina({ tarjetas = 0 }: { tarjetas?: number }) {
 
 function MarcoCarga({ mensaje, children }: { mensaje: string; children: ReactNode }) {
   return (
-    <div className="space-y-6" aria-busy="true">
+    <div className="space-y-6">
+      {/* aria-busy solo en el esqueleto: un ancestro ocupado puede silenciar la región viva. */}
       <span className="sr-only" role="status">{mensaje}</span>
-      <div aria-hidden="true" className="space-y-6">{children}</div>
+      <div aria-hidden="true" aria-busy="true" className="relative space-y-6">
+        {/*
+          Copia visible del aviso; el sr-only de arriba es el que anuncian los lectores. Va fuera del
+          flujo, a la altura del título: cuando llega la página no empuja ni desplaza nada.
+        */}
+        <p className="absolute top-1.5 right-0 text-sm animate-[aparecer_var(--duracion-base)_var(--curva-salida)_400ms_both]">
+          <TextoCargando>{mensaje}</TextoCargando>
+        </p>
+        {children}
+      </div>
     </div>
   )
 }

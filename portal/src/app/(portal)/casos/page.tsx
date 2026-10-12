@@ -14,7 +14,7 @@ import { IconoCerrar } from '@/components/ui/iconos'
 import { FOCO } from '@/components/ui/estilos'
 import { NumeroCausaCompartido } from '@/components/NumeroCausa'
 import { cx } from '@/lib/cx'
-import { NAVEGACION } from '@/lib/transiciones'
+import { ADELANTE } from '@/lib/transiciones'
 import { formatFecha, formatFechaProcesal } from '@/lib/fechas'
 import {
   CASOS_POR_PAGINA,
@@ -206,7 +206,7 @@ function columnas(f: Filtros): Columna<ExpedienteLista>[] {
       celda: (c, vista) => (
         <Link
           href={`/casos/${encodeURIComponent(c.numero_causa)}`}
-          transitionTypes={NAVEGACION}
+          transitionTypes={ADELANTE}
           className={`whitespace-nowrap rounded-sm font-mono text-sm font-medium text-fg underline-offset-2 transition-colors hover:text-primary hover:underline ${FOCO}`}
         >
           {/* Solo en la tabla: el nombre de la transición debe ser único en la página. */}

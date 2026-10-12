@@ -34,6 +34,20 @@ const eslintConfig = defineConfig([
     files: ["src/app/**/*.{ts,tsx}", "src/components/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
     rules: { "no-restricted-syntax": reglaColores("error") },
   },
+  // Código de terceros de Bklit (gráficos), instalado con `shadcn add @bklit/...` y sin reescribir:
+  // sus hooks usan patrones que las reglas estrictas de React Compiler marcan. Se relajan SOLO esas
+  // reglas en su carpeta; la barrera de colores sigue activa (sus colores se adaptaron al puente).
+  {
+    files: ["src/components/charts/**/*.{ts,tsx}", "src/components/shimmering-text.tsx"],
+    rules: {
+      "react-hooks/refs": "off",
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/exhaustive-deps": "off",
+      "react-hooks/purity": "off",
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

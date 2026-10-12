@@ -80,11 +80,25 @@ usa cientos de veces al día: lo frecuente se siente inmediato, lo excepcional s
   `<Link transitionTypes={NAVEGACION}>` o `router.push(url, { transitionTypes: NAVEGACION })`.
   Refrescos, filtros, orden, paginación y la carga tras el esqueleto son silenciosos. La vista que
   sale se va en 120ms y la nueva aparece en 200ms. La barra lateral ni se pinta ni bloquea clics.
+- **Navegación jerárquica:** `ADELANTE` (fila de una lista → su detalle) y `ATRAS` (migas de pan)
+  hacen entrar la vista nueva 16px desde el lado al que se avanza, con fundido, en 240ms; la vieja
+  solo se desvanece. Con movimiento reducido quedan en el fundido.
+- **Cambio de tema** (`ThemeToggle`): View Transition con tipo `tema`; la vista nueva se revela con
+  un `clip-path: circle()` que crece desde el clic en 400ms (excepción a la escala de duraciones:
+  cambio poco frecuente y de pantalla completa). Con teclado (flechas del grupo de radios), sin View
+  Transitions o con movimiento reducido, el cambio es inmediato.
 - **Elementos compartidos** (sin tipo, también con Atrás): el resaltado de la navegación se desliza
   (`indicador`) y el número de causa viaja de la lista al detalle (`texto-compartido`, en
   `NumeroCausaCompartido`). Un nombre de transición solo puede estar montado una vez.
 - **Entrada escalonada** `.entrada-escalonada`: solo en vistas que se ven una vez por sesión (login).
   Nunca en navegación repetida ni en listas que se paginan.
+- **Componentes de movimiento adoptados** (sección 6): paso del asistente con dirección
+  (`TransitionPanel`, 240ms entrada / 160ms salida), fondo deslizante de los filtros de /lotes
+  (`AnimatedBackground`, resorte sin rebote; salta si se activó con teclado), brillo en "Cargando…" y
+  "Buscando…" (`TextoCargando`; en los esqueletos aparece tras 400ms para no parpadear en cargas
+  rápidas), barra de lectura en el detalle de causa (`ProgresoLectura`), trazo en el borde de "Lotes
+  en curso" (`TrazoEnCurso`: tres vueltas de 8s y se retira; solo con un lote EN_CURSO y el servidor
+  procesando) y subrayado que crece en las migas con hover o foco (`EnlaceSubrayado`, de Skiper UI).
 - **Animaciones:** `animate-aparecer`, `animate-subir`, `animate-latido` (una onda por latido real,
   reiniciada con `key`) y `animate-barrido` (carga indeterminada, pausada cuando no se usa).
 - **Modal** (`Dialog`): `.dialogo-animado` anima la entrada y la salida (más corta; requiere `overlay`).
@@ -101,6 +115,12 @@ usa cientos de veces al día: lo frecuente se siente inmediato, lo excepcional s
 - Anima solo `transform`/`translate`/`scale`, `opacity` y `clip-path`. Para progreso usa `scaleX`.
   **Excepción documentada:** `height` con `interpolate-size` en despliegues (`.despliegue`) y en
   "Ver más" (`.texto-plegable`), a 240ms, nunca en listas.
+  **Excepción documentada:** el brillo de `TextoCargando` anima `background-position` en bucle; solo
+  existe mientras algo carga, sobre texto corto, y desaparece con movimiento reducido.
+  **Excepción documentada:** el trazo de `TrazoEnCurso` anima `offset-distance` (tres vueltas y se
+  retira); no se muestra con movimiento reducido.
+  **Excepción documentada:** las barras de Bklit crecen animando el tamaño del rect (400ms, una sola
+  vez al entrar en pantalla); con movimiento reducido no crecen.
 - Las salidas son más cortas que las entradas. Un clic no tiene impulso: sin rebotes.
 - **No animes lo que dispara el teclado ni lo de alta frecuencia:** escribir, moverse con flechas,
   atajos (1–4, Ctrl+K), cada fila al paginar, refrescos de fondo.
@@ -142,3 +162,34 @@ usa cientos de veces al día: lo frecuente se siente inmediato, lo excepcional s
 | peligro-fg / soft | 6.50:1 | 9.00:1 |
 | atencion-fg / soft | 7.28:1 | 9.72:1 |
 | neutral-fg / soft | 8.30:1 | 9.21:1 |
+
+## 6. Componentes de registros (shadcn, motion-primitives, Bklit, Skiper UI)
+
+Se instalan con la CLI de shadcn y la configuración de `components.json`:
+
+```bash
+npx shadcn@latest add @motion-primitives/<nombre>   # https://motion-primitives.com/c/{name}.json
+npx shadcn@latest add @bklit/<nombre>               # gráficos — https://ui.bklit.com/r/{name}.json
+npx shadcn@latest add @skiper-ui/<nombre>           # https://skiper-ui.com/r/{name}.json
+```
+
+- **Puente de colores** (`globals.css`, sección 3b): `background`, `foreground`, `card`, `popover`, `border`, `ring`, `chart-1…5` y el resto apuntan a tokens Espoir. Los componentes heredan identidad y tema sin editarlos.
+- **No puenteados:** `muted` y `accent`, porque Espoir los usa con otro significado. Al adoptar un componente, cambiar `bg-muted` y `bg-accent` por `bg-surface-2`.
+- **`dark:`** sigue el tema del portal (`data-theme` o la preferencia del sistema), no la clase `.dark`.
+- **`cn`** (`lib/utils.ts`) usa clsx y tailwind-merge, y conoce `text-titulo`, `text-display` y `text-rotulo`. El código propio sigue usando `cx`.
+- **No ejecutar `shadcn init` de nuevo.** En Windows sobrescribe `components/ui/Button.tsx` (mismo nombre que `button.tsx` sin distinguir mayúsculas), cambia la fuente a Geist y mezcla sus colores. Restaurar desde `proyectos/coordinacion/respaldos` si ocurre.
+- **Instalados y adaptados:** motion-primitives en `src/components/registro/motion/` (colores
+  Espoir, `motion/react`, sin efectos con setState); Bklit en `src/components/charts/` (su estructura
+  original: con `-p` se rompen sus importaciones relativas). Su CSS no se usa: las variables
+  `--chart-*` y los colores del tooltip salen del puente. Cifras y fechas en `es-EC`. ESLint relaja
+  solo reglas de hooks y TypeScript en esas carpetas; la barrera de color sigue activa.
+- **Al reinstalar** un componente con `shadcn add`, revisar `git status`: Bklit sobrescribe
+  `lib/utils.ts` (restaurar el `cn` extendido) y trae CSS propio que no se usa.
+- **Gráficos** (`inicio/PanoramaCartera.tsx`): una sola serie y un solo tono (`--chart-1`), cifras
+  junto a las barras en tinta (nunca del color de la serie), tooltip en español sin rebote, y los
+  datos en una tabla desplegable "Ver datos" (el contenedor del gráfico es `aria-hidden`: Bklit pinta
+  ejes y tooltip fuera del SVG). Se montan al entrar en pantalla. Las barras horizontales
+  sirven para categorías de nombre largo. En Bklit, una capa propia no debe tener prop `dataKey`:
+  la cuenta como serie y estrecha las barras. Datos: vistas `v_resumen_etapas_actuales` y
+  `v_actividad_diaria` (migraciones 009 y 010; solo cuenta consultas con resultado).
+- **Cada componente que se adopte** pasa por la revisión de movimiento (sección 3) y de accesibilidad antes de usarse en una pantalla. Licencia de Skiper UI gratuita: exige atribución, que va en el archivo.
