@@ -545,6 +545,22 @@ body {
 ::view-transition-new(root) {
   animation: none;
 }
+/*
+ * Cambio de tema (ThemeToggle, tipo "tema"): la vista nueva se revela con un círculo que crece desde
+ * el clic. Solo con este tipo se reactiva la raíz, que en navegación no se pinta.
+ */
+@keyframes revelar-tema {
+  from { clip-path: circle(0 at var(--tema-x, 50%) var(--tema-y, 50%)); }
+  to { clip-path: circle(var(--tema-r, 150%) at var(--tema-x, 50%) var(--tema-y, 50%)); }
+}
+html:active-view-transition-type(tema)::view-transition-old(root) {
+  display: block;
+  animation: none;
+}
+html:active-view-transition-type(tema)::view-transition-new(root) {
+  animation: revelar-tema 520ms var(--curva-salida) both;
+}
+
 ::view-transition-group(.pagina) {
   animation-duration: var(--duracion-pagina);
   animation-timing-function: var(--curva-salida);
