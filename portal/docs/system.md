@@ -142,3 +142,20 @@ usa cientos de veces al día: lo frecuente se siente inmediato, lo excepcional s
 | peligro-fg / soft | 6.50:1 | 9.00:1 |
 | atencion-fg / soft | 7.28:1 | 9.72:1 |
 | neutral-fg / soft | 8.30:1 | 9.21:1 |
+
+## 6. Componentes de registros (shadcn, motion-primitives, Bklit, Skiper UI)
+
+Se instalan con la CLI de shadcn y la configuración de `components.json`:
+
+```bash
+npx shadcn@latest add @motion-primitives/<nombre>   # https://motion-primitives.com/c/{name}.json
+npx shadcn@latest add @bklit/<nombre>               # gráficos — https://ui.bklit.com/r/{name}.json
+npx shadcn@latest add @skiper-ui/<nombre>           # https://skiper-ui.com/r/{name}.json
+```
+
+- **Puente de colores** (`globals.css`, sección 3b): `background`, `foreground`, `card`, `popover`, `border`, `ring`, `chart-1…5` y el resto apuntan a tokens Espoir. Los componentes heredan identidad y tema sin editarlos.
+- **No puenteados:** `muted` y `accent`, porque Espoir los usa con otro significado. Al adoptar un componente, cambiar `bg-muted` y `bg-accent` por `bg-surface-2`.
+- **`dark:`** sigue el tema del portal (`data-theme` o la preferencia del sistema), no la clase `.dark`.
+- **`cn`** (`lib/utils.ts`) usa clsx y tailwind-merge, y conoce `text-titulo`, `text-display` y `text-rotulo`. El código propio sigue usando `cx`.
+- **No ejecutar `shadcn init` de nuevo.** En Windows sobrescribe `components/ui/Button.tsx` (mismo nombre que `button.tsx` sin distinguir mayúsculas), cambia la fuente a Geist y mezcla sus colores. Restaurar desde `proyectos/coordinacion/respaldos` si ocurre.
+- **Cada componente que se adopte** pasa por la revisión de movimiento (sección 3) y de accesibilidad antes de usarse en una pantalla. Licencia de Skiper UI gratuita: exige atribución, que va en el archivo.

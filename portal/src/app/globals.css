@@ -1,4 +1,22 @@
 @import "tailwindcss";
+/* Utilidades de animación y variantes (data-open, data-checked…) para componentes de registros shadcn. */
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/*
+ * `dark:` sigue el mismo tema que el portal: data-theme="dark" explícito, o el sistema en oscuro
+ * salvo que se haya elegido data-theme="light" (ver ThemeToggle y el script de layout.tsx).
+ */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
 
 /*
  * Sistema de diseño "Espoir institucional" del portal de Gestión Judicial.
@@ -369,6 +387,66 @@ body {
   color: var(--fg);
   font-family: var(--font-sans);
   font-optical-sizing: auto;
+}
+
+/* ---------- 3b. Puente shadcn ↔ Espoir (docs/system.md, sección 6) ---------- */
+/*
+ * Los componentes de registros shadcn (motion-primitives, Bklit, Skiper UI) usan nombres como
+ * bg-background, text-foreground, bg-popover o border-border. Aquí esos nombres apuntan a los
+ * tokens Espoir, así que heredan la identidad y el tema claro/oscuro sin tocar sus archivos.
+ *
+ * Dos nombres NO se puentean porque Espoir ya los usa con otro significado:
+ *   --muted  (Espoir: color de TEXTO secundario; shadcn: fondo suave)
+ *   --accent (Espoir: ámbar de relleno;          shadcn: fondo suave de menús)
+ * Al adoptar un componente que use bg-muted o bg-accent, cambiarlos por bg-surface-2.
+ */
+:root {
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--surface);
+  --card-foreground: var(--fg);
+  --popover: var(--surface);
+  --popover-foreground: var(--fg);
+  --primary-foreground: var(--on-primary);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--fg);
+  --muted-foreground: var(--muted);
+  --accent-foreground: var(--fg);
+  --destructive: var(--peligro-solid);
+  --border: var(--border-subtle);
+  --input: var(--border-strong);
+  --ring: var(--focus);
+  --radius: 8px; /* = --radius-tarjeta */
+  /* Series de gráficos (Bklit): colores Espoir con contraste verificado en ambos temas. */
+  --chart-1: var(--primary);
+  --chart-2: var(--info-solid);
+  --chart-3: var(--exito-solid);
+  --chart-4: var(--atencion-solid);
+  --chart-5: var(--peligro-solid);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --font-heading: var(--font-sans);
 }
 
 /* ---------- 4. Movimiento (docs/system.md, sección 3) ---------- */
