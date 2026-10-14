@@ -52,12 +52,14 @@ class ProcesadorCaso:
         captcha: Mapping[str, Any] | None,
         navegador_visible: bool = True,
         casos_por_sesion: int = 10,
+        inferencia_ia: Mapping[str, Any] | None = None,
     ):
         self.url_portal = url_portal
         self.navegacion = dict(navegacion or {})
         self.captcha = dict(captcha or {})
         self.navegador_visible = bool(navegador_visible)
         self.casos_por_sesion = int(casos_por_sesion)
+        self.inferencia_ia = dict(inferencia_ia or {})
         self._bot = None
         self._casos_sesion = 0
 
@@ -67,6 +69,7 @@ class ProcesadorCaso:
                 self.url_portal,
                 self.navegacion,
                 captcha=self.captcha,
+                inferencia_ia=self.inferencia_ia,
             )
             self._bot.iniciar_navegador(modo_visible=self.navegador_visible)
             self._casos_sesion = 0

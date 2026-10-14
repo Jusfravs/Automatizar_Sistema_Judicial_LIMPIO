@@ -10,6 +10,8 @@ from src.proveedor_nvidia import (
     ControlInferenciaIA, ErrorAuditoriaIA, anonimizar_texto,
     construir_contexto_inferencia, inferir_nvidia, validar_inferencia,
 )
+from src.motor_busqueda_web import BotJudicial
+from src.inferencia_dual import comparar, huella_motor
 
 
 class InferenciaDualTests(unittest.TestCase):
@@ -107,6 +109,47 @@ class InferenciaDualTests(unittest.TestCase):
             with self.assertRaisesRegex(ErrorAuditoriaIA, "HTTP_401"):
                 inferir_nvidia(self.contexto, self.mapa, control=control, intentos=1)
         self.assertTrue(control.abierto)
+
+    def test_sombra_apagada_no_llama_ia_y_sombra_encendida_no_cambia_fase(self):
+        base = {"HISTORIAL_ACTUACIONES": [{
+            "fecha": "08/07/2026",
+            "detalle": "PUBLICACION Y FECHA PARA REMATE (AUTO INTERLOCUTORIO)",
+        }]}
+        apagado = BotJudicial("https://example.invalid", inferencia_ia={
+            "sombra_en_lote": False,
+        })
+        con_sombra = BotJudicial("https://example.invalid", inferencia_ia={
+            "sombra_en_lote": True,
+        })
+        with patch("src.inferencia_dual.comparar", side_effect=AssertionError("llamada")):
+            oficial = apagado._aplicar_inferencia_consolidada(
+                dict(base), causa="07333-2019-00278", alcance="causa"
+            )
+        with patch("src.inferencia_dual.comparar", side_effect=ErrorAuditoriaIA("HTTP_429")):
+            fallida = con_sombra._aplicar_inferencia_consolidada(
+                dict(base), causa="07333-2019-00278", alcance="causa"
+            )
+        self.assertEqual(oficial, fallida)
+
+    def test_comparacion_seudonima_y_huella_estable(self):
+        motor = {
+            "ULTIMA_ETAPA": "1 PRESENTACION Y CALIFICACION",
+            "ULTIMA_FASE": "1.3 CALIFICACION",
+            "ETAPA_ACTUAL": "2 CITACION", "FASE_ACTUAL": "2.1 CITACION",
+        }
+        actuaciones = self.datos["HISTORIAL_ACTUACIONES"]
+        propuesta = {**self.decision, "estado": "OK", "evidencias": ["hito-1"]}
+        with patch("src.inferencia_dual.inferir_nvidia", return_value=(
+            propuesta, {"total_tokens": 25}
+        )):
+            registro, _ = comparar("07333-2019-00278", self.datos, actuaciones, motor)
+        self.assertEqual(registro["huella_contexto"], huella_motor(
+            "07333-2019-00278", self.datos, actuaciones, motor
+        ))
+        self.assertTrue(registro["coincide_actual"])
+        self.assertTrue(registro["coincide_ultimo"])
+        self.assertEqual(registro["tokens"], 25)
+        self.assertNotIn("JUAN PEREZ", json.dumps(registro))
 
 
 if __name__ == "__main__":
