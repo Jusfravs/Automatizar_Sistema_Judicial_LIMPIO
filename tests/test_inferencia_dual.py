@@ -74,6 +74,7 @@ class InferenciaDualTests(unittest.TestCase):
         for cambio in (
             {"evidencias": ["A999"]},
             {"estado_actual": {"eta_id": 12, "fas_id": 80}},
+            {"estado_actual": {"eta_id": 2, "fas_id": 80}},
             {"confianza": 1.1},
             {"evidencias": []},
             {"ultimo_hito": {"eta_id": 12, "fas_id": 82}},

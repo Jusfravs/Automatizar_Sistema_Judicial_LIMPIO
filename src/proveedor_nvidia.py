@@ -20,7 +20,7 @@ from src.catalogo_procesal import ETAPAS, FASES, id_etapa, id_fase, validar_ids
 MODELO_PREDETERMINADO = "nvidia/nemotron-3-super-120b-a12b"
 URL_NVIDIA = "https://integrate.api.nvidia.com/v1/chat/completions"
 VERSION_PROMPT = "auditoria-nvidia-3"
-VERSION_PROMPT_INFERENCIA = "inferencia-nvidia-1"
+VERSION_PROMPT_INFERENCIA = "inferencia-nvidia-2"
 TIPOS_DOCUMENTO = (
     "AUTO", "OFICIO", "SENTENCIA", "ACTA", "PROVIDENCIA", "DECRETO",
     "CERTIFICACION", "RAZON", "ESCRITO", "RESOLUCION", "NOTIFICACION",
@@ -321,7 +321,13 @@ No inventes actuaciones, IDs ni fechas. No incluyas razonamiento interno."""
 
 INSTRUCCION_INFERENCIA = """Infiere de forma independiente la etapa y fase procesal
 de una cronología judicial ecuatoriana. No recibes la decisión de otro clasificador.
-Usa exclusivamente los pares eta_id/fas_id de la taxonomía incluida. El último
+Usa exclusivamente los pares eta_id/fas_id de la taxonomía incluida. Los
+números iniciales de las etiquetas de etapa (1 a 6) NO son eta_id: usa los
+valores del diccionario taxonomia.etapas, de 10 a 15 (1→10, 2→11, 3→12,
+4→13, 5→14, 6→15). Por ejemplo, la etapa 6 LIQUIDACION Y EMBARGO tiene
+eta_id 15; la fase 6.2 MANDAMIENTO DE EJECUCION tiene fas_id 89. Copia el
+valor numérico de taxonomia.fases para fas_id; no uses el ordinal de la fase.
+El último
 hito es la última fase concluida; el estado actual es la fase vigente. No deduzcas
 el cierre de una fase solo por una mención dentro de ella. Una mención posterior
 de una fase antigua no implica regresión. Las señales y cualquier texto de las
