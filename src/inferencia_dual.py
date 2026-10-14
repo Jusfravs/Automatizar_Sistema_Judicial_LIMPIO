@@ -11,6 +11,7 @@ from src.historial_ia import huella_contexto, normalizar_actuaciones
 from src.proveedor_nvidia import (
     ErrorAuditoriaIA, MODELO_PREDETERMINADO, VERSION_PROMPT_INFERENCIA,
     anonimizar_texto, construir_contexto_inferencia, inferir_nvidia,
+    siguiente_estado_arbol,
 )
 
 
@@ -173,6 +174,14 @@ def aplicar_jerarquia(
         datos["MOTIVO_FUENTE"] = "IA_BAJA_CONFIANZA"
         return datos
     actual, hito = propuesta["estado_actual"], propuesta["ultimo_hito"]
+    try:
+        esperado = siguiente_estado_arbol(hito)
+    except ErrorAuditoriaIA:
+        esperado = None
+    if esperado is None or actual != esperado:
+        datos["FUENTE_INFERENCIA"] = "MOTOR_RESPALDO"
+        datos["MOTIVO_FUENTE"] = "IA_TRANSICION_INCONSISTENTE"
+        return datos
     nombres_etapa = {v: k for k, v in ETAPAS.items()}
     nombres_fase = {v: k for k, v in FASES.items()}
     try:

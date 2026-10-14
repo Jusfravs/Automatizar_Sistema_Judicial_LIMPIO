@@ -120,8 +120,9 @@ def redactar_reporte(m: dict) -> str:
         f"Comparaciones registradas: **{m['total']}**; pares comparables: **{m['comparables']}**.",
         "",
         "## Acuerdo motor–IA", "",
-        f"- Estado actual: {_porcentaje(m['acuerdo_actual'], m['comparables'])}.",
-        f"- Último hito: {_porcentaje(m['acuerdo_ultimo'], m['comparables'])}.",
+        f"- Fase operativa siguiente (ACTUAL): {_porcentaje(m['acuerdo_actual'], m['comparables'])}.",
+        f"- Último estado reconocido del árbol (ÚLTIMA): {_porcentaje(m['acuerdo_ultimo'], m['comparables'])}.",
+        "- La última gestión judicial por fecha se calcula aparte y no se infiere aquí.",
         f"- Respuestas insuficientes: {m['insuficientes']}.",
         "- Desacuerdos por etapa del motor: " +
         (", ".join(f"{k}: {v}" for k, v in sorted(m["desacuerdos_por_etapa"].items())) or "ninguno") + ".",
@@ -140,8 +141,8 @@ def redactar_reporte(m: dict) -> str:
             f"- Exactitud de etapa actual: {_porcentaje(x['etapa_actual_correcta'], x['evaluables'])}.",
             f"- Exactitud de fase actual: {_porcentaje(x['fase_actual_correcta'], x['evaluables'])}.",
             f"- Par actual correcto: {_porcentaje(x['par_actual_correcto'], x['evaluables'])}.",
-            f"- Par del último hito correcto: {_porcentaje(x['par_ultimo_correcto'], x['evaluables'])}.",
-            f"- Falsos avances actuales: {x['falsos_avances_actual']} de {x['evaluables']}.", "",
+            f"- Par del último estado del árbol correcto: {_porcentaje(x['par_ultimo_correcto'], x['evaluables'])}.",
+            f"- Falsos avances de la fase siguiente: {x['falsos_avances_actual']} de {x['evaluables']}.", "",
         ])
     lineas.extend([
         "## Decisión pendiente", "",

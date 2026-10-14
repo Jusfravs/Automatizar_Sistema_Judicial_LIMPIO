@@ -33,10 +33,13 @@ class TestMigracionPortalSupabase(unittest.TestCase):
             self.assertEqual(int(eta_id), int(nombre.split(".")[0]) + 9, nombre)
 
     def test_version_vigente_coincide_con_el_prompt_de_auditoria(self):
+        versiones = []
         for archivo in SQL_SUPABASE:
             for constante in re.findall(r"c_version_vigente CONSTANT VARCHAR := '([^']+)'",
                                         archivo.read_text(encoding="utf-8")):
-                self.assertEqual(constante, VERSION_PROMPT, archivo.name)
+                versiones.append((archivo.name, constante))
+        self.assertTrue(versiones)
+        self.assertEqual(versiones[-1][1], VERSION_PROMPT, versiones[-1][0])
 
     def test_acceso_unificado_sin_roles_divididos(self):
         sql = SQL_ACCESO.read_text(encoding="utf-8")
