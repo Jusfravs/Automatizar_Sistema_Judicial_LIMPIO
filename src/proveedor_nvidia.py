@@ -152,9 +152,12 @@ def anonimizar_texto(texto: object, datos: dict | None = None) -> str:
     for clave in ("ACTOR", "ACTORES", "DEMANDANTE", "DEMANDADO", "DEMANDADOS"):
         valor = partes.get(clave)
         if isinstance(valor, str):
-            nombres.append(valor)
+            nombres.extend(re.split(r"[;|\n]+", valor))
         elif isinstance(valor, (list, tuple)):
-            nombres.extend(str(elemento) for elemento in valor if elemento)
+            nombres.extend(
+                segmento for elemento in valor if elemento
+                for segmento in re.split(r"[;|\n]+", str(elemento))
+            )
     for nombre in sorted(set(nombres), key=len, reverse=True):
         if len(nombre.strip()) >= 3:
             salida = re.sub(re.escape(nombre.strip()), "[PARTE]", salida, flags=re.IGNORECASE)

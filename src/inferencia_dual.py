@@ -6,7 +6,7 @@ import time
 
 from psycopg2.extras import Json
 
-from src.catalogo_procesal import ids_para_estado
+from src.catalogo_procesal import ETAPAS, FASES, enriquecer_datos_procesales, ids_para_estado
 from src.historial_ia import huella_contexto, normalizar_actuaciones
 from src.proveedor_nvidia import (
     ErrorAuditoriaIA, MODELO_PREDETERMINADO, VERSION_PROMPT_INFERENCIA,
@@ -125,3 +125,65 @@ def guardar_postgres(conn, registro: dict) -> bool:
             valores,
         )
     return True
+
+
+def aplicar_jerarquia(
+    datos: dict, registro: dict | None, propuesta: dict | None,
+    config_ia: dict | None = None,
+) -> dict:
+    """Selecciona fuente; solo cambia etapas/fases cuando la IA es apta."""
+    config = config_ia or {}
+    if config.get("jerarquia", "motor") != "ia_primero":
+        datos["FUENTE_INFERENCIA"] = "MOTOR"
+        datos["MOTIVO_FUENTE"] = "JERARQUIA_MOTOR"
+        return datos
+    try:
+        umbral = float(config.get("umbral_confianza", 0.75))
+        if not 0 <= umbral <= 1:
+            raise ValueError("umbral")
+    except (TypeError, ValueError):
+        datos["FUENTE_INFERENCIA"] = "MOTOR_RESPALDO"
+        datos["MOTIVO_FUENTE"] = "UMBRAL_INVALIDO"
+        return datos
+    error = (registro or {}).get("error")
+    if error:
+        datos["FUENTE_INFERENCIA"] = "MOTOR_RESPALDO"
+        datos["MOTIVO_FUENTE"] = f"IA_{error}"
+        return datos
+    if not propuesta or propuesta.get("estado") != "OK":
+        datos["FUENTE_INFERENCIA"] = "MOTOR_RESPALDO"
+        datos["MOTIVO_FUENTE"] = "IA_SIN_PROPUESTA"
+        return datos
+    if propuesta.get("requiere_revision_humana") is True:
+        datos["FUENTE_INFERENCIA"] = "MOTOR_RESPALDO"
+        datos["MOTIVO_FUENTE"] = "IA_REQUIERE_REVISION"
+        return datos
+    if propuesta.get("confianza", 0) < umbral:
+        datos["FUENTE_INFERENCIA"] = "MOTOR_RESPALDO"
+        datos["MOTIVO_FUENTE"] = "IA_BAJA_CONFIANZA"
+        return datos
+    actual, hito = propuesta["estado_actual"], propuesta["ultimo_hito"]
+    nombres_etapa = {v: k for k, v in ETAPAS.items()}
+    nombres_fase = {v: k for k, v in FASES.items()}
+    try:
+        etapa_actual = nombres_etapa[actual["eta_id"]]
+        fase_actual = nombres_fase[actual["fas_id"]]
+        ultima_etapa = nombres_etapa[hito["eta_id"]]
+        ultima_fase = nombres_fase[hito["fas_id"]]
+    except (KeyError, TypeError):
+        datos["FUENTE_INFERENCIA"] = "MOTOR_RESPALDO"
+        datos["MOTIVO_FUENTE"] = "IA_PAR_INVALIDO"
+        return datos
+    if (datos.get("ETAPA ACTUAL"), datos.get("FASE ACTUAL")) != (etapa_actual, fase_actual):
+        datos["FECHA INICIAL FASE ACTUAL"] = None
+        datos["FECHA INICIO FASE ACTUAL"] = None
+    if (datos.get("ULTIMA ETAPA"), datos.get("ULTIMA FASE")) != (ultima_etapa, ultima_fase):
+        datos["FECHA FIN ULTIMA FASE"] = None
+    datos.update({
+        "ETAPA_PROCESAL": etapa_actual, "FASE_PROCESAL": fase_actual,
+        "ETAPA ACTUAL": etapa_actual, "FASE ACTUAL": fase_actual,
+        "ULTIMA ETAPA": ultima_etapa, "ULTIMA FASE": ultima_fase,
+        "FUENTE_INFERENCIA": "IA", "MOTIVO_FUENTE": "IA_CONFIANZA_SUFICIENTE",
+    })
+    enriquecer_datos_procesales(datos)
+    return datos
