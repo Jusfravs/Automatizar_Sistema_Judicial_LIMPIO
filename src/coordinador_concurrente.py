@@ -153,6 +153,7 @@ def ejecutar_trabajador(
     config_navegacion,
     config_captcha,
     config_concurrencia,
+    config_inferencia_ia,
     ejecucion_id,
     worker_id,
     ciudad,
@@ -171,6 +172,7 @@ def ejecutar_trabajador(
         config_captcha,
         navegador_visible=concurrencia.navegador_visible,
         casos_por_sesion=concurrencia.casos_por_sesion,
+        inferencia_ia=config_inferencia_ia,
     )
     logger.info("[%s] Trabajador iniciado.", worker_id)
     try:
@@ -315,6 +317,7 @@ class CoordinadorConcurrente:
                         dict(self.config.get("navegacion") or {}),
                         dict(self.config.get("captcha") or {}),
                         dict(self.config.get("concurrencia") or {}),
+                        dict(self.config.get("inferencia_ia") or {}),
                         ejecucion_id,
                         worker_id,
                         self.gestor_casos.filtros.get("sucursal") or "TODAS",

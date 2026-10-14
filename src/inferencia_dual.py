@@ -1,0 +1,127 @@
+"""Comparación idempotente de dos fuentes; nunca cambia la decisión oficial."""
+
+from __future__ import annotations
+
+import time
+
+from psycopg2.extras import Json
+
+from src.catalogo_procesal import ids_para_estado
+from src.historial_ia import huella_contexto, normalizar_actuaciones
+from src.proveedor_nvidia import (
+    ErrorAuditoriaIA, MODELO_PREDETERMINADO, VERSION_PROMPT_INFERENCIA,
+    anonimizar_texto, construir_contexto_inferencia, inferir_nvidia,
+)
+
+
+COLUMNAS = (
+    "numero_causa", "ejecucion_id", "huella_contexto", "modelo", "version_prompt",
+    "motor_eta_actual", "motor_fas_actual", "motor_eta_ultimo", "motor_fas_ultimo",
+    "ia_eta_actual", "ia_fas_actual", "ia_eta_ultimo", "ia_fas_ultimo",
+    "confianza", "evidencias", "motivo", "coincide_actual", "coincide_ultimo",
+    "latencia_ms", "tokens", "error",
+)
+
+
+def huella_motor(numero_causa: str, datos: dict, actuaciones: list[dict], motor: dict) -> str:
+    """Identidad estable de actuaciones y clasificación del motor."""
+    ids = ids_para_estado(
+        motor.get("ULTIMA_ETAPA"), motor.get("ULTIMA_FASE"),
+        motor.get("ETAPA_ACTUAL") or motor.get("ULTIMA_ETAPA"),
+        motor.get("FASE_ACTUAL") or motor.get("ULTIMA_FASE"),
+    )
+    firma = {
+        **datos,
+        "ULTIMA ETAPA": motor.get("ULTIMA_ETAPA"),
+        "ULTIMA FASE": motor.get("ULTIMA_FASE"),
+        "ETAPA ACTUAL": motor.get("ETAPA_ACTUAL") or motor.get("ULTIMA_ETAPA"),
+        "FASE ACTUAL": motor.get("FASE_ACTUAL") or motor.get("ULTIMA_FASE"),
+        **ids,
+    }
+    return huella_contexto(normalizar_actuaciones(numero_causa, actuaciones), firma)
+
+
+def comparar(
+    numero_causa: str, datos: dict, actuaciones: list[dict],
+    motor: dict, config_ia: dict | None = None, *, ejecucion_id=None,
+) -> tuple[dict, dict | None]:
+    """Devuelve registro seguro y propuesta IA; el llamador decide la jerarquía."""
+    config = config_ia or {}
+    modelo = config.get("modelo") or MODELO_PREDETERMINADO
+    normalizadas = normalizar_actuaciones(numero_causa, actuaciones)
+    ids = ids_para_estado(
+        motor.get("ULTIMA_ETAPA"), motor.get("ULTIMA_FASE"),
+        motor.get("ETAPA_ACTUAL") or motor.get("ULTIMA_ETAPA"),
+        motor.get("FASE_ACTUAL") or motor.get("ULTIMA_FASE"),
+    )
+    registro = {
+        "numero_causa": numero_causa, "ejecucion_id": ejecucion_id,
+        "huella_contexto": huella_motor(numero_causa, datos, actuaciones, motor),
+        "modelo": modelo, "version_prompt": VERSION_PROMPT_INFERENCIA,
+        "motor_eta_actual": ids["eta_id ETAPA ACTUAL"],
+        "motor_fas_actual": ids["fas_id FASE ACTUAL"],
+        "motor_eta_ultimo": ids["eta_id ULTIMA ETAPA"],
+        "motor_fas_ultimo": ids["fas_id ULTIMA FASE"],
+        "ia_eta_actual": None, "ia_fas_actual": None,
+        "ia_eta_ultimo": None, "ia_fas_ultimo": None,
+        "confianza": None, "evidencias": [], "motivo": None,
+        "coincide_actual": None, "coincide_ultimo": None,
+        "latencia_ms": None, "tokens": None, "error": None,
+    }
+    if not normalizadas:
+        registro["error"] = "SIN_ACTUACIONES"
+        return registro, None
+    contexto, mapa = construir_contexto_inferencia(
+        datos, normalizadas, incluir_texto=config.get("incluir_texto") is True,
+    )
+    inicio = time.monotonic()
+    try:
+        propuesta, uso = inferir_nvidia(
+            contexto, mapa, modelo=modelo,
+            rpm=int(config.get("rpm", 30)),
+            timeout=int(config.get("timeout", 45)),
+            intentos=int(config.get("intentos", 3)),
+        )
+        registro["latencia_ms"] = round((time.monotonic() - inicio) * 1000)
+        registro["tokens"] = uso.get("total_tokens") or (
+            (uso.get("prompt_tokens") or 0) + (uso.get("completion_tokens") or 0)
+        )
+        registro["confianza"] = propuesta["confianza"]
+        registro["evidencias"] = propuesta["evidencias"]
+        registro["motivo"] = anonimizar_texto(propuesta["motivo"], datos)[:800]
+        if propuesta["estado"] == "INSUFICIENTE":
+            registro["error"] = "INSUFICIENTE"
+        else:
+            actual, hito = propuesta["estado_actual"], propuesta["ultimo_hito"]
+            registro.update({
+                "ia_eta_actual": actual["eta_id"], "ia_fas_actual": actual["fas_id"],
+                "ia_eta_ultimo": hito["eta_id"], "ia_fas_ultimo": hito["fas_id"],
+                "coincide_actual": (actual["eta_id"], actual["fas_id"]) ==
+                    (registro["motor_eta_actual"], registro["motor_fas_actual"]),
+                "coincide_ultimo": (hito["eta_id"], hito["fas_id"]) ==
+                    (registro["motor_eta_ultimo"], registro["motor_fas_ultimo"]),
+            })
+        return registro, propuesta
+    except ErrorAuditoriaIA as exc:
+        registro["latencia_ms"] = round((time.monotonic() - inicio) * 1000)
+        registro["error"] = exc.codigo
+        return registro, None
+
+
+def guardar_postgres(conn, registro: dict) -> bool:
+    """UPSERT dentro de la transacción del llamador, sin tocar expedientes."""
+    columnas = ", ".join(COLUMNAS)
+    marcadores = ", ".join(["%s"] * len(COLUMNAS))
+    actualizaciones = ", ".join(
+        f"{campo}=EXCLUDED.{campo}" for campo in COLUMNAS
+        if campo not in {"numero_causa", "huella_contexto", "modelo", "version_prompt"}
+    )
+    valores = [Json(registro[c]) if c == "evidencias" else registro[c] for c in COLUMNAS]
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"INSERT INTO inferencias_ia ({columnas}) VALUES ({marcadores}) "
+            "ON CONFLICT (numero_causa, huella_contexto, modelo, version_prompt) "
+            f"DO UPDATE SET {actualizaciones}, creado_en=CURRENT_TIMESTAMP",
+            valores,
+        )
+    return True

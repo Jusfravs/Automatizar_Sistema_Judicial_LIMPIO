@@ -71,7 +71,10 @@
     "modo": "sombra",
     "proveedor": "nvidia",
     "modelo": "nvidia/nemotron-3-super-120b-a12b",
-    "api_key_env": "NVIDIA_API_KEY"
+    "api_key_env": "NVIDIA_API_KEY",
+    "incluir_texto": false,
+    "rpm": 30,
+    "sombra_en_lote": false
   },
   "base_de_datos": {
     "motor": "sqlite",
