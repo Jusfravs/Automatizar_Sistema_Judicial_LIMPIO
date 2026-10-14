@@ -8,7 +8,8 @@ from unittest.mock import patch
 
 from src.proveedor_nvidia import (
     ControlInferenciaIA, ErrorAuditoriaIA, anonimizar_texto,
-    construir_contexto_inferencia, inferir_nvidia, validar_inferencia,
+    construir_contexto_inferencia, inferir_nvidia, siguiente_estado_arbol,
+    validar_inferencia,
 )
 from src.motor_busqueda_web import BotJudicial
 from src.inferencia_dual import aplicar_jerarquia, comparar, huella_motor
@@ -34,7 +35,6 @@ class InferenciaDualTests(unittest.TestCase):
         )
         self.decision = {
             "ultimo_hito": {"eta_id": 10, "fas_id": 79},
-            "estado_actual": {"eta_id": 11, "fas_id": 80},
             "evidencias": ["A1"], "confianza": 0.91,
             "motivo": "Auto de citación", "requiere_revision_humana": False,
         }
@@ -71,20 +71,40 @@ class InferenciaDualTests(unittest.TestCase):
     def test_valida_pares_evidencias_y_insuficiente(self):
         validada = validar_inferencia(self.decision, self.mapa)
         self.assertEqual(validada["evidencias"], ["hito-1"])
+        self.assertEqual(validada["estado_actual"], {"eta_id": 11, "fas_id": 80})
         for cambio in (
             {"evidencias": ["A999"]},
-            {"estado_actual": {"eta_id": 12, "fas_id": 80}},
-            {"estado_actual": {"eta_id": 2, "fas_id": 80}},
+            {"ultimo_hito": {"eta_id": 12, "fas_id": 80}},
+            {"ultimo_hito": {"eta_id": 2, "fas_id": 80}},
             {"confianza": 1.1},
             {"evidencias": []},
-            {"ultimo_hito": {"eta_id": 12, "fas_id": 82}},
         ):
             with self.subTest(cambio=cambio), self.assertRaises(ErrorAuditoriaIA):
                 validar_inferencia({**self.decision, **cambio}, self.mapa)
-        insuficiente = {**self.decision, "ultimo_hito": None,
-                        "estado_actual": "INSUFICIENTE", "evidencias": [],
+        insuficiente = {**self.decision, "ultimo_hito": None, "evidencias": [],
                         "requiere_revision_humana": True}
         self.assertEqual(validar_inferencia(insuficiente, self.mapa)["estado"], "INSUFICIENTE")
+
+    def test_actual_es_siguiente_del_ultimo_hito_y_no_respuesta_ia(self):
+        for ultimo, siguiente in (
+            ((10, 79), (11, 80)),
+            ((11, 80), (12, 82)),
+            ((15, 89), (15, 90)),
+            ((15, 90), (15, 91)),
+            ((15, 91), (15, 91)),
+            ((15, 92), (15, 92)),
+        ):
+            with self.subTest(ultimo=ultimo):
+                hito = {"eta_id": ultimo[0], "fas_id": ultimo[1]}
+                self.assertEqual(
+                    siguiente_estado_arbol(hito),
+                    {"eta_id": siguiente[0], "fas_id": siguiente[1]},
+                )
+                propuesta = {**self.decision, "ultimo_hito": hito,
+                             "estado_actual": hito}
+                validada = validar_inferencia(propuesta, self.mapa)
+                self.assertEqual(validada["estado_actual"],
+                                 {"eta_id": siguiente[0], "fas_id": siguiente[1]})
 
     def test_transporte_simulado_y_circuito(self):
         respuesta = {"choices": [{"message": {"content": json.dumps(self.decision)}}],
@@ -141,10 +161,8 @@ class InferenciaDualTests(unittest.TestCase):
             "ETAPA_ACTUAL": "2 CITACION", "FASE_ACTUAL": "2.1 CITACION",
         }
         actuaciones = self.datos["HISTORIAL_ACTUACIONES"]
-        propuesta = {**self.decision, "estado": "OK", "evidencias": ["hito-1"]}
         def inferencia_falsa(_contexto, mapa, **_opciones):
-            return ({**propuesta, "evidencias": [mapa["A1"]["actuacion_id"]]},
-                    {"total_tokens": 25})
+            return validar_inferencia(self.decision, mapa), {"total_tokens": 25}
 
         with patch("src.inferencia_dual.inferir_nvidia", side_effect=inferencia_falsa):
             registro, _ = comparar("07333-2019-00278", self.datos, actuaciones, motor)
@@ -202,6 +220,12 @@ class InferenciaDualTests(unittest.TestCase):
         self.assertIsNone(elegido["FECHA INICIO FASE ACTUAL"])
         self.assertIsNone(elegido["FECHA FIN ULTIMA FASE"])
         self.assertEqual(elegido["fas_id FASE ACTUAL"], 82)
+        inconsistente = aplicar_jerarquia(
+            dict(original), {"error": None},
+            {**propuesta, "estado_actual": propuesta["ultimo_hito"]}, config,
+        )
+        self.assertEqual(inconsistente["FUENTE_INFERENCIA"], "MOTOR_RESPALDO")
+        self.assertEqual(inconsistente["MOTIVO_FUENTE"], "IA_TRANSICION_INCONSISTENTE")
         baja = aplicar_jerarquia(dict(original), {"error": None},
                                  {**propuesta, "confianza": 0.4}, config)
         self.assertEqual(baja["FUENTE_INFERENCIA"], "MOTOR_RESPALDO")
