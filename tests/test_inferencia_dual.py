@@ -12,6 +12,7 @@ from src.proveedor_nvidia import (
 )
 from src.motor_busqueda_web import BotJudicial
 from src.inferencia_dual import comparar, huella_motor
+from scripts.comparar_inferencias import evaluar, redactar_reporte, seudonimo
 
 
 class InferenciaDualTests(unittest.TestCase):
@@ -150,6 +151,27 @@ class InferenciaDualTests(unittest.TestCase):
         self.assertTrue(registro["coincide_ultimo"])
         self.assertEqual(registro["tokens"], 25)
         self.assertNotIn("JUAN PEREZ", json.dumps(registro))
+
+    def test_reporte_usa_etiquetas_y_cuenta_falsos_avances(self):
+        self.assertEqual(seudonimo("CAUSA-1", b"x" * 20),
+                         seudonimo("CAUSA-1", b"x" * 20))
+        filas = [{
+            "id_seudonimo": "p1", "motor_eta_actual": 11,
+            "motor_fas_actual": 80, "motor_eta_ultimo": 10,
+            "motor_fas_ultimo": 79, "ia_eta_actual": 12,
+            "ia_fas_actual": 82, "ia_eta_ultimo": 11,
+            "ia_fas_ultimo": 80, "error": None,
+            "latencia_ms": 200, "tokens": 30,
+        }]
+        etiquetas = {"p1": {
+            "eta_id_actual_correcta": "11", "fas_id_actual_correcta": "80",
+            "eta_id_ultimo_correcta": "10", "fas_id_ultimo_correcta": "79",
+        }}
+        m = evaluar(filas, etiquetas)
+        self.assertEqual(m["motor"]["par_actual_correcto"], 1)
+        self.assertEqual(m["ia"]["par_actual_correcto"], 0)
+        self.assertEqual(m["ia"]["falsos_avances_actual"], 1)
+        self.assertIn("Causas etiquetadas y válidas: **1**", redactar_reporte(m))
 
 
 if __name__ == "__main__":
