@@ -963,18 +963,28 @@ class BotJudicial:
         enriquecer_datos_procesales(datos)
         if inferencia.get("MENSAJE_ESPECIAL"):
             datos["COMENTARIO_ULTIMO"] = inferencia.get("MENSAJE_ESPECIAL")
-        if alcance == "causa" and self.inferencia_ia.get("sombra_en_lote") is True:
-            try:
-                from src.inferencia_dual import comparar
+        if alcance == "causa":
+            from src.inferencia_dual import aplicar_jerarquia
 
-                registro, _ = comparar(
-                    str(causa or datos.get("NUMERO_JUICIO") or ""),
-                    datos, actuaciones, inferencia, self.inferencia_ia,
-                )
-                datos["_INFERENCIA_DUAL"] = registro
-            except Exception as exc:
-                # La comparación nunca puede interrumpir el lote.
-                logger.warning("[INFERENCIA_DUAL] Comparación omitida: %s", type(exc).__name__)
+            registro, propuesta = None, None
+            debe_comparar = (
+                self.inferencia_ia.get("sombra_en_lote") is True
+                or self.inferencia_ia.get("jerarquia", "motor") == "ia_primero"
+            )
+            if debe_comparar:
+                try:
+                    from src.inferencia_dual import comparar
+
+                    registro, propuesta = comparar(
+                        str(causa or datos.get("NUMERO_JUICIO") or ""),
+                        datos, actuaciones, inferencia, self.inferencia_ia,
+                    )
+                    datos["_INFERENCIA_DUAL"] = registro
+                except Exception as exc:
+                    # El error de IA no interrumpe ni cambia el resultado del motor.
+                    registro = {"error": "ERROR_COMPARACION"}
+                    logger.warning("[INFERENCIA_DUAL] Comparación omitida: %s", type(exc).__name__)
+            aplicar_jerarquia(datos, registro, propuesta, self.inferencia_ia)
         try:
             log_payload = {
                 "source": datos.get("ORIGEN_DATA") or "consolidado",
@@ -985,7 +995,8 @@ class BotJudicial:
                 "fase_deducida": datos["ULTIMA FASE"],
                 "etapa": datos["ULTIMA ETAPA"],
                 "fecha_final": datos["FECHA FIN ULTIMA FASE"],
-                "fase_actual": inferencia.get("FASE_ACTUAL"),
+                "fase_actual": datos.get("FASE ACTUAL"),
+                "fuente_inferencia": datos.get("FUENTE_INFERENCIA"),
                 "actuacion_respaldo": str(
                     inferencia.get("ACTUACION_RESPALDO") or ""
                 )[:500],

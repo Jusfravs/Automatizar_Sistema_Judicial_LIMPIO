@@ -11,7 +11,7 @@ from src.proveedor_nvidia import (
     construir_contexto_inferencia, inferir_nvidia, validar_inferencia,
 )
 from src.motor_busqueda_web import BotJudicial
-from src.inferencia_dual import comparar, huella_motor
+from src.inferencia_dual import aplicar_jerarquia, comparar, huella_motor
 from scripts.comparar_inferencias import evaluar, redactar_reporte, seudonimo
 
 
@@ -172,6 +172,35 @@ class InferenciaDualTests(unittest.TestCase):
         self.assertEqual(m["ia"]["par_actual_correcto"], 0)
         self.assertEqual(m["ia"]["falsos_avances_actual"], 1)
         self.assertIn("Causas etiquetadas y válidas: **1**", redactar_reporte(m))
+
+    def test_jerarquia_ia_y_respaldo_por_confianza_o_error(self):
+        original = {
+            "ULTIMA ETAPA": "1 PRESENTACION Y CALIFICACION",
+            "ULTIMA FASE": "1.3 CALIFICACION",
+            "ETAPA ACTUAL": "2 CITACION", "FASE ACTUAL": "2.1 CITACION",
+            "FECHA FIN ULTIMA FASE": "01/01/2025",
+            "FECHA INICIO FASE ACTUAL": "02/01/2025",
+        }
+        propuesta = {"estado": "OK", "confianza": 0.91,
+                     "requiere_revision_humana": False,
+                     "ultimo_hito": {"eta_id": 11, "fas_id": 80},
+                     "estado_actual": {"eta_id": 12, "fas_id": 82}}
+        config = {"jerarquia": "ia_primero", "umbral_confianza": 0.75}
+        elegido = aplicar_jerarquia(dict(original), {"error": None}, propuesta, config)
+        self.assertEqual(elegido["FUENTE_INFERENCIA"], "IA")
+        self.assertEqual(elegido["FASE ACTUAL"], "3.1 CONTESTACION")
+        self.assertIsNone(elegido["FECHA INICIO FASE ACTUAL"])
+        self.assertIsNone(elegido["FECHA FIN ULTIMA FASE"])
+        self.assertEqual(elegido["fas_id FASE ACTUAL"], 82)
+        baja = aplicar_jerarquia(dict(original), {"error": None},
+                                 {**propuesta, "confianza": 0.4}, config)
+        self.assertEqual(baja["FUENTE_INFERENCIA"], "MOTOR_RESPALDO")
+        self.assertEqual(baja["FASE ACTUAL"], original["FASE ACTUAL"])
+        agotada = aplicar_jerarquia(dict(original), {"error": "HTTP_402"}, None, config)
+        self.assertEqual(agotada["MOTIVO_FUENTE"], "IA_HTTP_402")
+        motor = aplicar_jerarquia(dict(original), None, None, {"jerarquia": "motor"})
+        self.assertEqual(motor["FASE ACTUAL"], original["FASE ACTUAL"])
+        self.assertEqual(motor["FUENTE_INFERENCIA"], "MOTOR")
 
 
 if __name__ == "__main__":

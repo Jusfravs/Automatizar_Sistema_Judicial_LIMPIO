@@ -274,6 +274,14 @@ class CoordinadorConcurrente:
             raise RuntimeError("POSTGRES_ESQUEMA_INCOMPLETO")
 
     def ejecutar(self, casos, ruta_casos_fallidos):
+        config_ia_trabajador = dict(self.config.get("inferencia_ia") or {})
+        if (config_ia_trabajador.get("sombra_en_lote") is True
+                or config_ia_trabajador.get("jerarquia", "motor") == "ia_primero"):
+            rpm_total = int(config_ia_trabajador.get("rpm", 30))
+            if rpm_total < self.trabajadores:
+                raise ValueError("RPM_INFERENCIA_MENOR_QUE_TRABAJADORES")
+            # Cada proceso limita su cuota; la suma no supera el RPM configurado.
+            config_ia_trabajador["rpm"] = rpm_total // self.trabajadores
         self._validar_precondiciones()
         causas = list(casos)
         perfil = self.config.get("perfil") or os.path.basename(self.ruta_config)
@@ -317,7 +325,7 @@ class CoordinadorConcurrente:
                         dict(self.config.get("navegacion") or {}),
                         dict(self.config.get("captcha") or {}),
                         dict(self.config.get("concurrencia") or {}),
-                        dict(self.config.get("inferencia_ia") or {}),
+                        dict(config_ia_trabajador),
                         ejecucion_id,
                         worker_id,
                         self.gestor_casos.filtros.get("sucursal") or "TODAS",
