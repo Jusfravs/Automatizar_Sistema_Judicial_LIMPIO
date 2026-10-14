@@ -285,6 +285,8 @@ def validar_inferencia(decision: object, mapa: dict) -> dict:
         }
         if not validar_ids(etiquetas):
             raise ErrorAuditoriaIA("PAR_INVALIDO")
+        if hito["fas_id"] > actual["fas_id"]:
+            raise ErrorAuditoriaIA("HITO_POSTERIOR_A_ACTUAL")
         if not evidencias:
             raise ErrorAuditoriaIA("INFERENCIA_SIN_EVIDENCIA")
     elif not decision["requiere_revision_humana"]:
@@ -380,9 +382,9 @@ CONTROL_INFERENCIA = ControlInferenciaIA()
 
 def _solicitar_nvidia(
     contexto: dict, instruccion: str, *, modelo: str, timeout: int,
-    intentos: int, max_tokens: int,
+    intentos: int, max_tokens: int, api_key_env: str = "NVIDIA_API_KEY",
 ) -> tuple[dict, dict]:
-    clave = os.environ.get("NVIDIA_API_KEY", "").strip()
+    clave = os.environ.get(api_key_env, "").strip()
     if not clave:
         raise ErrorAuditoriaIA("NVIDIA_API_KEY_AUSENTE")
     cuerpo = json.dumps({
@@ -440,6 +442,7 @@ def inferir_nvidia(
     contexto: dict, mapa: dict, *, modelo: str = MODELO_PREDETERMINADO,
     timeout: int = 45, intentos: int = 3, rpm: int = 30,
     control: ControlInferenciaIA | None = None,
+    api_key_env: str = "NVIDIA_API_KEY",
 ) -> tuple[dict, dict]:
     """Propone pares de etapa/fase sin recibir la decisión del motor."""
     regulador = control if control is not None else CONTROL_INFERENCIA
@@ -447,7 +450,7 @@ def inferir_nvidia(
         raise ErrorAuditoriaIA("CONTEXTO_NO_CIEGO")
     if regulador.abierto:
         raise ErrorAuditoriaIA("CIRCUITO_ABIERTO")
-    if not os.environ.get("NVIDIA_API_KEY", "").strip():
+    if not os.environ.get(api_key_env, "").strip():
         regulador.registrar_error("NVIDIA_API_KEY_AUSENTE")
         raise ErrorAuditoriaIA("NVIDIA_API_KEY_AUSENTE")
     regulador.esperar_turno(rpm)
@@ -455,6 +458,7 @@ def inferir_nvidia(
         decision, uso = _solicitar_nvidia(
             contexto, INSTRUCCION_INFERENCIA, modelo=modelo,
             timeout=timeout, intentos=intentos, max_tokens=700,
+            api_key_env=api_key_env,
         )
         validada = validar_inferencia(decision, mapa)
         validada["modelo_fuente"] = modelo

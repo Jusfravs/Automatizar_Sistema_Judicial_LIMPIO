@@ -23,6 +23,15 @@ COLUMNAS = (
 )
 
 
+def _actuaciones_identificadas(numero_causa: str, actuaciones: list[dict]) -> list[dict]:
+    """Conserva IDs del archivo ya persistido; asigna IDs a capturas nuevas."""
+    if actuaciones and all(
+        isinstance(act, dict) and act.get("actuacion_id") for act in actuaciones
+    ):
+        return actuaciones
+    return normalizar_actuaciones(numero_causa, actuaciones)
+
+
 def huella_motor(numero_causa: str, datos: dict, actuaciones: list[dict], motor: dict) -> str:
     """Identidad estable de actuaciones y clasificación del motor."""
     ids = ids_para_estado(
@@ -38,7 +47,7 @@ def huella_motor(numero_causa: str, datos: dict, actuaciones: list[dict], motor:
         "FASE ACTUAL": motor.get("FASE_ACTUAL") or motor.get("ULTIMA_FASE"),
         **ids,
     }
-    return huella_contexto(normalizar_actuaciones(numero_causa, actuaciones), firma)
+    return huella_contexto(_actuaciones_identificadas(numero_causa, actuaciones), firma)
 
 
 def comparar(
@@ -48,7 +57,7 @@ def comparar(
     """Devuelve registro seguro y propuesta IA; el llamador decide la jerarquía."""
     config = config_ia or {}
     modelo = config.get("modelo") or MODELO_PREDETERMINADO
-    normalizadas = normalizar_actuaciones(numero_causa, actuaciones)
+    normalizadas = _actuaciones_identificadas(numero_causa, actuaciones)
     ids = ids_para_estado(
         motor.get("ULTIMA_ETAPA"), motor.get("ULTIMA_FASE"),
         motor.get("ETAPA_ACTUAL") or motor.get("ULTIMA_ETAPA"),
@@ -81,6 +90,7 @@ def comparar(
             rpm=int(config.get("rpm", 30)),
             timeout=int(config.get("timeout", 45)),
             intentos=int(config.get("intentos", 3)),
+            api_key_env=config.get("api_key_env") or "NVIDIA_API_KEY",
         )
         registro["latencia_ms"] = round((time.monotonic() - inicio) * 1000)
         registro["tokens"] = uso.get("total_tokens") or (

@@ -76,6 +76,7 @@ class InferenciaDualTests(unittest.TestCase):
             {"estado_actual": {"eta_id": 12, "fas_id": 80}},
             {"confianza": 1.1},
             {"evidencias": []},
+            {"ultimo_hito": {"eta_id": 12, "fas_id": 82}},
         ):
             with self.subTest(cambio=cambio), self.assertRaises(ErrorAuditoriaIA):
                 validar_inferencia({**self.decision, **cambio}, self.mapa)
@@ -140,9 +141,11 @@ class InferenciaDualTests(unittest.TestCase):
         }
         actuaciones = self.datos["HISTORIAL_ACTUACIONES"]
         propuesta = {**self.decision, "estado": "OK", "evidencias": ["hito-1"]}
-        with patch("src.inferencia_dual.inferir_nvidia", return_value=(
-            propuesta, {"total_tokens": 25}
-        )):
+        def inferencia_falsa(_contexto, mapa, **_opciones):
+            return ({**propuesta, "evidencias": [mapa["A1"]["actuacion_id"]]},
+                    {"total_tokens": 25})
+
+        with patch("src.inferencia_dual.inferir_nvidia", side_effect=inferencia_falsa):
             registro, _ = comparar("07333-2019-00278", self.datos, actuaciones, motor)
         self.assertEqual(registro["huella_contexto"], huella_motor(
             "07333-2019-00278", self.datos, actuaciones, motor
@@ -151,6 +154,12 @@ class InferenciaDualTests(unittest.TestCase):
         self.assertTrue(registro["coincide_ultimo"])
         self.assertEqual(registro["tokens"], 25)
         self.assertNotIn("JUAN PEREZ", json.dumps(registro))
+        with patch("src.inferencia_dual.inferir_nvidia", side_effect=inferencia_falsa):
+            persistido, _ = comparar("07333-2019-00278", self.datos, [{
+                **actuaciones[0], "actuacion_id": "ID_PERSISTIDO",
+            }], motor)
+        self.assertEqual(persistido["evidencias"], ["ID_PERSISTIDO"])
+        self.assertNotEqual(persistido["huella_contexto"], registro["huella_contexto"])
 
     def test_reporte_usa_etiquetas_y_cuenta_falsos_avances(self):
         self.assertEqual(seudonimo("CAUSA-1", b"x" * 20),

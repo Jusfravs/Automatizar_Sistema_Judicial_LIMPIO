@@ -25,7 +25,8 @@ def ejecutar(ruta_config: Path, limite: int, causas: list[str] | None = None,
     repo = RepositorioColaPostgres.desde_config(config["base_de_datos"])
     resumen = {"vistos": 0, "comparados": 0, "coinciden_actual": 0,
                "coinciden_ultimo": 0, "insuficientes": 0, "errores": 0,
-               "omitidos": 0, "guardados": 0, "tokens": 0,
+               "omitidos": 0, "sin_payload": 0, "sin_actuaciones": 0, "sin_motor": 0,
+               "preparados": 0, "guardados": 0, "tokens": 0,
                "latencia_ms_total": 0, "circuito_abierto": False}
     conn = repo._get_connection()
     try:
@@ -40,11 +41,19 @@ def ejecutar(ruta_config: Path, limite: int, causas: list[str] | None = None,
             if causas:
                 cur.execute("""
                     SELECT numero_causa, datos_json FROM expedientes
-                    WHERE numero_causa = ANY(%s) ORDER BY numero_causa LIMIT %s
+                    WHERE numero_causa = ANY(%s) AND datos_json IS NOT NULL
+                    AND EXISTS (SELECT 1 FROM actuaciones_procesales a
+                                WHERE a.numero_causa=expedientes.numero_causa
+                                AND a.titulo <> '')
+                    ORDER BY numero_causa LIMIT %s
                 """, (causas, limite))
             else:
                 cur.execute("""
                     SELECT numero_causa, datos_json FROM expedientes
+                    WHERE datos_json IS NOT NULL
+                    AND EXISTS (SELECT 1 FROM actuaciones_procesales a
+                                  WHERE a.numero_causa=expedientes.numero_causa
+                                  AND a.titulo <> '')
                     ORDER BY numero_causa LIMIT %s
                 """, (limite,))
             filas = cur.fetchall()
@@ -52,20 +61,23 @@ def ejecutar(ruta_config: Path, limite: int, causas: list[str] | None = None,
             resumen["vistos"] += 1
             if not isinstance(payload, dict):
                 resumen["omitidos"] += 1
+                resumen["sin_payload"] += 1
                 continue
             datos = payload.get("datos") if isinstance(payload.get("datos"), dict) else payload
             datos = dict(datos)
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT fecha, titulo, detalle, carpeta FROM actuaciones_procesales
+                    SELECT actuacion_id, fecha, titulo, detalle, carpeta FROM actuaciones_procesales
                     WHERE numero_causa=%s AND titulo <> '' ORDER BY fecha, actuacion_id
                 """, (numero_causa,))
                 actuaciones = [
-                    {"fecha": f, "titulo": t, "detalle": d, "carpeta": c}
-                    for f, t, d, c in cur.fetchall()
+                    {"actuacion_id": act_id, "fecha": f, "titulo": t,
+                     "detalle": d, "carpeta": c}
+                    for act_id, f, t, d, c in cur.fetchall()
                 ]
             if not actuaciones:
                 resumen["omitidos"] += 1
+                resumen["sin_actuaciones"] += 1
                 continue
             try:
                 motor = MotorInferenciaProcesal.inferir_estado_procesal(
@@ -73,8 +85,10 @@ def ejecutar(ruta_config: Path, limite: int, causas: list[str] | None = None,
                 )
                 if not motor or not motor.get("ULTIMA_ETAPA"):
                     resumen["omitidos"] += 1
+                    resumen["sin_motor"] += 1
                     continue
                 huella = huella_motor(numero_causa, datos, actuaciones, motor)
+                resumen["preparados"] += 1
                 if not sin_guardar and not sin_red:
                     with conn.cursor() as cur:
                         cur.execute("""
@@ -87,7 +101,6 @@ def ejecutar(ruta_config: Path, limite: int, causas: list[str] | None = None,
                         resumen["omitidos"] += 1
                         continue
                 if sin_red:
-                    resumen["omitidos"] += 1
                     continue
                 registro, _ = comparar(numero_causa, datos, actuaciones, motor, ia)
                 if registro["error"]:
