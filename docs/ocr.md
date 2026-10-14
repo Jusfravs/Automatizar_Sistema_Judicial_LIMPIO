@@ -1,6 +1,6 @@
 # Lectura de adjuntos y OCR: plan pendiente
 
-Este documento recoge el acuerdo de trabajo del 13/10/2026. **No autoriza ni ejecuta descargas, OCR ni cambios en el motor.** El historial y el análisis técnico detallado están en los documentos de coordinación privados `C:\Users\pasante.callcenter\proyectos\coordinacion\discusion-ocr.md` y `C:\Users\pasante.callcenter\proyectos\coordinacion\informe-unlimited-ocr.md`.
+Este documento recoge el acuerdo de trabajo del 13/10/2026. **No autoriza ni ejecuta descargas, OCR ni cambios en el motor.** El historial y el análisis técnico detallado están en los documentos privados de coordinación: [acuerdo OCR](../../coordinacion/discusion-ocr.md) e [informe Unlimited-OCR](../../coordinacion/informe-unlimited-ocr.md). Esos archivos se conservan fuera del repositorio de código.
 
 ## Papel del OCR
 
