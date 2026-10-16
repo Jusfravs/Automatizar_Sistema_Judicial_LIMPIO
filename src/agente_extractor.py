@@ -928,6 +928,18 @@ class MotorInferenciaProcesal:
         if termino_norm in terminos_bancarios:
             if termino_norm not in texto_evaluable:
                 return False
+            # Una orden que anuncia una retencion futura no acredita que el
+            # banco haya inmovilizado los fondos. No marcar el caso solventado.
+            if re.search(
+                r"\b(?:SERAN|SERIAN|SEAN|QUEDARAN)\s+"
+                r"(?:RETENID[AO]S?|CONGELAD[AO]S?|BLOQUEAD[AO]S?)\b",
+                texto_contextual,
+            ) and not re.search(
+                r"\b(?:BANCO\s+(?:INFORMA|CONFIRMA|CERTIFICA)|"
+                r"YA\s+(?:FUERON|ESTAN)\s+(?:RETENID[AO]S?|CONGELAD[AO]S?))\b",
+                texto_contextual,
+            ):
+                return False
             # Pedir que se certifique la existencia de cuentas solo localiza
             # activos; no prueba retencion, congelamiento ni recuperacion.
             cuenta_afectada = bool(
@@ -2106,8 +2118,12 @@ class MotorInferenciaProcesal:
         fechas_archivo_demanda = [
             cls._fecha_ordenable(act.get("fecha"))
             for act in actuaciones_evaluar
-            if "ARCHIVO DE LA PRESENTE DEMANDA" in normalizar_texto(
-                act.get("detalle", "")
+            if any(
+                marcador in normalizar_texto(act.get("detalle", ""))
+                for marcador in (
+                    "ARCHIVO DE LA PRESENTE DEMANDA",
+                    "ARCHIVO POR NO COMPLETAR DEMANDA",
+                )
             )
         ]
         fechas_ejecutoria_auto_archivo = {
@@ -2314,7 +2330,12 @@ class MotorInferenciaProcesal:
                                 r"\b(?:EN\s+PERSONA|POR\s+BOLETA)\b",
                                 norm_exito,
                             ))
-                            if persona_str == persona_exito or exito_global:
+                            # Un resumen anonimo del mismo dia puede ser la
+                            # citacion de otra persona; no subsana por si solo
+                            # una razon individual de no citacion.
+                            if persona_str == persona_exito or (
+                                exito_global and fecha_exito > fecha_fallo
+                            ):
                                 exito_posterior = True
                                 break
                         elif palabras_fallo:
