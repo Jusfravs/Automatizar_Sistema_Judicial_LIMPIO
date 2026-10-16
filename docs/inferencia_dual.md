@@ -11,3 +11,20 @@ El JSON de NVIDIA llama `ultimo_hito` al par que alimenta `ULTIMA ETAPA` y `ULTI
 La comparación en sombra registra los dos pares de cada fuente. Las etiquetas humanas de evaluación deben distinguir el último estado acreditado de la fase siguiente; ninguna de esas columnas se debe rellenar copiando la última gestión judicial. Una discrepancia motor–IA indica una revisión pendiente, no que alguna fuente haya acertado.
 
 La jerarquía predeterminada sigue siendo `motor`. El envío de texto de actuaciones y la comparación dentro del lote están apagados por defecto.
+
+## Evidencia estructurada y cierres (inferencia NVIDIA v4)
+
+La muestra de hasta 100 actuaciones conserva rótulos procesales intermedios para
+que un mandamiento anterior no desaparezca detrás de oficios recientes. El
+contexto de NVIDIA sigue sin enviar texto libre: agrega el resultado de las
+citaciones (`REALIZADA`, `NO_REALIZADA` o `SIN_CONSTANCIA`), referencias
+seudónimas `P1`, `P2` para relacionar intentos de una misma persona, y señales
+explícitas de abandono o archivo.
+
+Una propuesta 6.2 sin evidencia de mandamiento, 5.1 sin evidencia de sentencia,
+2.1 sin constancia de citación o con una citación fallida pendiente, y un hito
+seguido de cierre en la misma carpeta se rechazan con un código auditable. El
+rechazo deja la clasificación oficial en el motor y requiere revisión humana.
+El archivo sigue siendo una condición distinta de la fase del árbol: una causa
+archivada no debe interpretarse como tarea activa solo porque el motor calcule
+una fase siguiente.

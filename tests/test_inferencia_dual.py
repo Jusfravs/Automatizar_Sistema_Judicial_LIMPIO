@@ -56,6 +56,43 @@ class InferenciaDualTests(unittest.TestCase):
         self.assertIn("Citación", texto)
         self.assertLessEqual(len(texto), 600)
 
+    def test_contexto_distingue_citacion_fallida_y_sentencia_citada(self):
+        actuaciones = [
+            {"actuacion_id": "a1", "fecha": "01/01/2025", "titulo": "AUTO",
+             "detalle": "SE PRONUNCIARA INMEDIATAMENTE SENTENCIA"},
+            {"actuacion_id": "a2", "fecha": "02/01/2025", "titulo": "PROVIDENCIA",
+             "detalle": "SEGUN SENTENCIA NRO. 123 DE LA CORTE CONSTITUCIONAL"},
+            {"actuacion_id": "a3", "fecha": "03/01/2025", "titulo": "CITACION",
+             "detalle": "CITACION: NO REALIZADA - DESCONOCIDO"},
+            {"actuacion_id": "a4", "fecha": "04/01/2025", "titulo": "ACTA DE CITACION",
+             "detalle": "ACTA DE CITACION"},
+            {"actuacion_id": "a5", "fecha": "05/01/2025", "titulo": "CITACION",
+             "detalle": "CITACION: REALIZADA - EN PERSONA"},
+        ]
+        contexto, _ = construir_contexto_inferencia({}, actuaciones)
+        cronologia = contexto["cronologia"]
+        self.assertNotIn("SENTENCIA", cronologia[0]["tipo"])
+        self.assertNotIn("SENTENCIA", cronologia[1]["tipo"])
+        self.assertEqual([p["citacion"]["resultado"] for p in cronologia[2:]], [
+            "NO_REALIZADA", "SIN_CONSTANCIA", "REALIZADA",
+        ])
+
+    def test_contexto_conserva_mandamiento_intermedio_fuera_del_recorte(self):
+        actuaciones = [
+            {"actuacion_id": str(i),
+             "fecha": f"2025-{i // 28 + 1:02d}-{i % 28 + 1:02d}",
+             "titulo": "OFICIO", "detalle": "OFICIO"}
+            for i in range(120)
+        ]
+        actuaciones[20] = {
+            "actuacion_id": "20", "fecha": "2025-01-21",
+            "titulo": "MANDAMIENTO DE EJECUCION",
+            "detalle": "MANDAMIENTO DE EJECUCION (AUTO INTERLOCUTORIO)",
+        }
+        contexto, mapa = construir_contexto_inferencia({}, actuaciones)
+        self.assertEqual(len(contexto["cronologia"]), 100)
+        self.assertIn("20", {act["actuacion_id"] for act in mapa.values()})
+
     def test_anonimiza_causa_y_limita_total(self):
         self.assertNotIn("07331-2024-00277", anonimizar_texto("causa 07331-2024-00277"))
         datos = dict(self.datos)
@@ -84,6 +121,47 @@ class InferenciaDualTests(unittest.TestCase):
         insuficiente = {**self.decision, "ultimo_hito": None, "evidencias": [],
                         "requiere_revision_humana": True}
         self.assertEqual(validar_inferencia(insuficiente, self.mapa)["estado"], "INSUFICIENTE")
+
+    def test_mandamiento_exige_actuacion_que_lo_acredite(self):
+        actuaciones = [{"actuacion_id": "r1", "fecha": "02/10/2025",
+                        "titulo": "RAZON DE EJECUTORIA",
+                        "detalle": "RAZON DE EJECUTORIA (RAZON)"}]
+        contexto, mapa = construir_contexto_inferencia({}, actuaciones)
+        propuesta = {**self.decision,
+                     "ultimo_hito": {"eta_id": 15, "fas_id": 89}}
+        with self.assertRaisesRegex(ErrorAuditoriaIA, "MANDAMIENTO_SIN_EVIDENCIA"):
+            validar_inferencia(propuesta, mapa, contexto)
+
+    def test_citacion_de_un_demandado_no_resuelve_fallo_de_otro(self):
+        actuaciones = [
+            {"actuacion_id": "r1", "detalle": "CITACION: REALIZADA - EN PERSONA"},
+            {"actuacion_id": "r2", "detalle": "CITACION: NO REALIZADA - DESCONOCIDO"},
+        ]
+        contexto = {"cronologia": [
+            {"ref": "A1", "fecha": "2026-09-18", "carpeta": "C1",
+             "citacion": {"resultado": "REALIZADA", "persona": "P1"}},
+            {"ref": "A2", "fecha": "2026-09-23", "carpeta": "C1",
+             "citacion": {"resultado": "NO_REALIZADA", "persona": "P2"}},
+        ]}
+        propuesta = {**self.decision,
+                     "ultimo_hito": {"eta_id": 11, "fas_id": 80}}
+        with self.assertRaisesRegex(ErrorAuditoriaIA, "CITACION_PENDIENTE_OTRA_PERSONA"):
+            validar_inferencia(propuesta, {"A1": actuaciones[0], "A2": actuaciones[1]},
+                               contexto)
+
+    def test_archivo_posterior_a_evidencia_exige_revision(self):
+        actuaciones = [
+            {"actuacion_id": "r1", "detalle": "AUTO DE CALIFICACION"},
+            {"actuacion_id": "r2", "detalle": "SE REMITE AL ARCHIVO GENERAL"},
+        ]
+        contexto = {"cronologia": [
+            {"ref": "A1", "fecha": "2025-01-01", "carpeta": "C1"},
+            {"ref": "A2", "fecha": "2025-02-01", "carpeta": "C1",
+             "cierre": "ARCHIVO_PASIVO"},
+        ]}
+        with self.assertRaisesRegex(ErrorAuditoriaIA, "CIERRE_POSTERIOR_A_HITO"):
+            validar_inferencia(self.decision,
+                               {"A1": actuaciones[0], "A2": actuaciones[1]}, contexto)
 
     def test_actual_es_siguiente_del_ultimo_hito_y_no_respuesta_ia(self):
         for ultimo, siguiente in (
