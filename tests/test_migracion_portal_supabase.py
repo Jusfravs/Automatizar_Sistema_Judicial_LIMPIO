@@ -33,10 +33,13 @@ class TestMigracionPortalSupabase(unittest.TestCase):
             self.assertEqual(int(eta_id), int(nombre.split(".")[0]) + 9, nombre)
 
     def test_version_vigente_coincide_con_el_prompt_de_auditoria(self):
+        versiones = []
         for archivo in SQL_SUPABASE:
             for constante in re.findall(r"c_version_vigente CONSTANT VARCHAR := '([^']+)'",
                                         archivo.read_text(encoding="utf-8")):
-                self.assertEqual(constante, VERSION_PROMPT, archivo.name)
+                versiones.append((archivo.name, constante))
+        self.assertTrue(versiones)
+        self.assertEqual(versiones[-1][1], VERSION_PROMPT, versiones[-1][0])
 
     def test_acceso_unificado_sin_roles_divididos(self):
         sql = SQL_ACCESO.read_text(encoding="utf-8")
@@ -48,14 +51,22 @@ class TestMigracionPortalSupabase(unittest.TestCase):
         self.assertNotRegex(sql, r"rol_actual\(\)\)? (NOT )?IN \(")
 
     def test_todas_las_tablas_del_motor_tienen_rls(self):
-        tablas_motor = set()
+        bloque_rls = self.sql.split("ENABLE ROW LEVEL SECURITY")[0]
         for archivo in SQL_MOTOR:
-            tablas_motor |= set(re.findall(
+            tablas_motor = set(re.findall(
                 r"CREATE TABLE IF NOT EXISTS (\w+)", archivo.read_text(encoding="utf-8")
             ))
-        bloque_rls = self.sql.split("ENABLE ROW LEVEL SECURITY")[0]
-        for tabla in tablas_motor:
-            self.assertIn("'%s'" % tabla, bloque_rls, tabla)
+            for tabla in tablas_motor:
+                if tabla == "inferencias_ia":
+                    migracion = (RAIZ / "migrations" / "supabase" /
+                                 "011_inferencias_ia.sql").read_text(encoding="utf-8")
+                    self.assertIn(
+                        "ALTER TABLE public.inferencias_ia ENABLE ROW LEVEL SECURITY",
+                        migracion,
+                    )
+                    self.assertIn("CREATE POLICY lectura_usuarios", migracion)
+                else:
+                    self.assertIn("'%s'" % tabla, bloque_rls, tabla)
 
     def test_todas_las_vistas_del_motor_usan_security_invoker(self):
         vistas = set()

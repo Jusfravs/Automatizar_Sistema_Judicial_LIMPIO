@@ -928,6 +928,18 @@ class MotorInferenciaProcesal:
         if termino_norm in terminos_bancarios:
             if termino_norm not in texto_evaluable:
                 return False
+            # Una orden que anuncia una retencion futura no acredita que el
+            # banco haya inmovilizado los fondos. No marcar el caso solventado.
+            if re.search(
+                r"\b(?:SERAN|SERIAN|SEAN|QUEDARAN)\s+"
+                r"(?:RETENID[AO]S?|CONGELAD[AO]S?|BLOQUEAD[AO]S?)\b",
+                texto_contextual,
+            ) and not re.search(
+                r"\b(?:BANCO\s+(?:INFORMA|CONFIRMA|CERTIFICA)|"
+                r"YA\s+(?:FUERON|ESTAN)\s+(?:RETENID[AO]S?|CONGELAD[AO]S?))\b",
+                texto_contextual,
+            ):
+                return False
             # Pedir que se certifique la existencia de cuentas solo localiza
             # activos; no prueba retencion, congelamiento ni recuperacion.
             cuenta_afectada = bool(
@@ -2100,6 +2112,31 @@ class MotorInferenciaProcesal:
             actuaciones_rama
         )
 
+        # Una razón breve de ejecutoria puede referirse al auto que archivó
+        # una demanda. Si otra actuación de la misma fecha identifica al
+        # "auto definitivo" como lo ejecutoriado, no es prueba de sentencia.
+        fechas_archivo_demanda = [
+            cls._fecha_ordenable(act.get("fecha"))
+            for act in actuaciones_evaluar
+            if any(
+                marcador in normalizar_texto(act.get("detalle", ""))
+                for marcador in (
+                    "ARCHIVO DE LA PRESENTE DEMANDA",
+                    "ARCHIVO POR NO COMPLETAR DEMANDA",
+                )
+            )
+        ]
+        fechas_ejecutoria_auto_archivo = {
+            cls._fecha_ordenable(act.get("fecha"))
+            for act in actuaciones_evaluar
+            if "AUTO DEFINITIVO" in normalizar_texto(act.get("detalle", ""))
+            and "EJECUTORIAD" in normalizar_texto(act.get("detalle", ""))
+            and any(
+                fecha_archivo <= cls._fecha_ordenable(act.get("fecha"))
+                for fecha_archivo in fechas_archivo_demanda
+            )
+        }
+
         tiene_calificacion_demanda = False
         tiene_contestacion = False
         tiene_calificacion_contestacion = False
@@ -2141,6 +2178,11 @@ class MotorInferenciaProcesal:
                 })
 
             for etapa, fase, terminos in cls.TAXONOMIA_COMPLETA:
+                if (
+                    fase == "5.3 SENTENCIA EJECUTORIADA"
+                    and cls._fecha_ordenable(fecha) in fechas_ejecutoria_auto_archivo
+                ):
+                    continue
                 for term in terminos:
                     term_norm = normalizar_texto(term)
                     if cls._termino_procesal_presente(norm, term_norm):
@@ -2288,7 +2330,12 @@ class MotorInferenciaProcesal:
                                 r"\b(?:EN\s+PERSONA|POR\s+BOLETA)\b",
                                 norm_exito,
                             ))
-                            if persona_str == persona_exito or exito_global:
+                            # Un resumen anonimo del mismo dia puede ser la
+                            # citacion de otra persona; no subsana por si solo
+                            # una razon individual de no citacion.
+                            if persona_str == persona_exito or (
+                                exito_global and fecha_exito > fecha_fallo
+                            ):
                                 exito_posterior = True
                                 break
                         elif palabras_fallo:

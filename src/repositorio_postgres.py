@@ -291,6 +291,7 @@ class RepositorioColaPostgres:
         if estado_final not in ESTADOS_TERMINALES - {"ERROR_FINAL", "CANCELADO"}:
             raise ValueError("ESTADO_TERMINAL_INVALIDO:%s" % estado_final)
         payload, datos = self._normalizar_resultado(resultado)
+        registro_inferencia_ia = datos.pop("_INFERENCIA_DUAL", None)
         campos = self._campos_expediente(datos)
         actuaciones = datos.get("HISTORIAL_ACTUACIONES") or []
         with self._connection() as conn:
@@ -394,6 +395,18 @@ class RepositorioColaPostgres:
                         Json(payload),
                     ),
                 )
+                if isinstance(registro_inferencia_ia, dict):
+                    registro_inferencia_ia["ejecucion_id"] = ejecucion_id
+                    cur.execute("SAVEPOINT inferencia_ia_opcional")
+                    try:
+                        from src.inferencia_dual import guardar_postgres
+
+                        guardar_postgres(conn, registro_inferencia_ia)
+                        cur.execute("RELEASE SAVEPOINT inferencia_ia_opcional")
+                    except Exception as exc:
+                        cur.execute("ROLLBACK TO SAVEPOINT inferencia_ia_opcional")
+                        cur.execute("RELEASE SAVEPOINT inferencia_ia_opcional")
+                        logger.warning("Comparación IA no persistida: %s", type(exc).__name__)
                 cur.execute(
                     "DELETE FROM actuaciones WHERE numero_causa = %s",
                     (trabajo.numero_causa,),
