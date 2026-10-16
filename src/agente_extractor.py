@@ -2100,6 +2100,27 @@ class MotorInferenciaProcesal:
             actuaciones_rama
         )
 
+        # Una razón breve de ejecutoria puede referirse al auto que archivó
+        # una demanda. Si otra actuación de la misma fecha identifica al
+        # "auto definitivo" como lo ejecutoriado, no es prueba de sentencia.
+        fechas_archivo_demanda = [
+            cls._fecha_ordenable(act.get("fecha"))
+            for act in actuaciones_evaluar
+            if "ARCHIVO DE LA PRESENTE DEMANDA" in normalizar_texto(
+                act.get("detalle", "")
+            )
+        ]
+        fechas_ejecutoria_auto_archivo = {
+            cls._fecha_ordenable(act.get("fecha"))
+            for act in actuaciones_evaluar
+            if "AUTO DEFINITIVO" in normalizar_texto(act.get("detalle", ""))
+            and "EJECUTORIAD" in normalizar_texto(act.get("detalle", ""))
+            and any(
+                fecha_archivo <= cls._fecha_ordenable(act.get("fecha"))
+                for fecha_archivo in fechas_archivo_demanda
+            )
+        }
+
         tiene_calificacion_demanda = False
         tiene_contestacion = False
         tiene_calificacion_contestacion = False
@@ -2141,6 +2162,11 @@ class MotorInferenciaProcesal:
                 })
 
             for etapa, fase, terminos in cls.TAXONOMIA_COMPLETA:
+                if (
+                    fase == "5.3 SENTENCIA EJECUTORIADA"
+                    and cls._fecha_ordenable(fecha) in fechas_ejecutoria_auto_archivo
+                ):
+                    continue
                 for term in terminos:
                     term_norm = normalizar_texto(term)
                     if cls._termino_procesal_presente(norm, term_norm):

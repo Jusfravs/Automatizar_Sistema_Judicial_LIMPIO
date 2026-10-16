@@ -2248,5 +2248,26 @@ class TestClasificacionArbol(unittest.TestCase):
         self.assertEqual(resultado["ULTIMA FASE"], "1.3 CALIFICACION")
         self.assertEqual(resultado["FASE ACTUAL"], "REVISION MANUAL")
 
+    def test_ejecutoria_de_auto_que_archiva_demanda_no_es_sentencia(self):
+        actuaciones = [
+            {"fecha": "17/09/2025", "detalle": (
+                "SE DISPONE EL ARCHIVO DE LA PRESENTE DEMANDA POR NO "
+                "COMPLETAR Y ACLARAR LOS REQUISITOS"
+            )},
+            {"fecha": "02/10/2025", "detalle": "RAZON DE EJECUTORIA (RAZON)"},
+            {"fecha": "2025-10-02", "detalle": (
+                "RAZON: EL AUTO DEFINITIVO DICTADO EN ESTA CAUSA "
+                "SE ENCUENTRA EJECUTORIADO POR EL MINISTERIO DE LA LEY"
+            )},
+        ]
+
+        resultado = MotorInferenciaProcesal.inferir_estado_procesal(actuaciones)
+
+        self.assertNotEqual(resultado.ultima_fase, "5.3 SENTENCIA EJECUTORIADA")
+        self.assertIn(resultado.ultima_fase, (
+            "1.1 PRESENTAR DEMANDA", "1.2 COMPLETAR/ACLARAR DEMANDA",
+        ))
+
+
 if __name__ == "__main__":
     unittest.main()
