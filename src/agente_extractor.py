@@ -2093,40 +2093,52 @@ class MotorInferenciaProcesal:
             filtradas.append(actuacion)
         return filtradas
 
-    # Autos de SATJE que cierran la causa. Se reconocen por su rótulo (el
-    # título de la actuación) para no confundirlos con la razón de envío al
-    # archivo general, que es custodia documental "hasta impulso de las
-    # partes" y deja la causa VIGENTE.
-    _CONDICION_TIPO_AUTO = r"(?:\s*\((?:AUTO|RAZON DE NOTIFICACION|RESOLUCION|DECRETO|SENTENCIA)\b|\s*$)"
+    # Autos de SATJE que cierran la causa. Se reconocen por su rótulo con el
+    # tipo de providencia ("ABANDONO (AUTO RESOLUTIVO)"), no por menciones en
+    # escritos o razones. El envío al archivo general es custodia documental
+    # "hasta impulso de las partes" y deja la causa VIGENTE; la inhibición o
+    # abstención remite la causa a otro juez y tampoco la cierra.
+    _CONDICION_TIPO_AUTO = r"[^(]{0,80}\(\s*(?:AUTO|RAZON DE NOTIFICACION|RESOLUCION|SENTENCIA)\b"
     PATRONES_CONDICION = (
-        ("ABANDONADA", re.compile(r"^\s*ABANDONO\b[^(]{0,80}" + _CONDICION_TIPO_AUTO)),
+        ("ABANDONADA", re.compile(r"^\s*ABANDONO\b" + _CONDICION_TIPO_AUTO)),
         ("CONCLUIDA", re.compile(
             r"^\s*(?:ACUERDO TRANSACCIONAL|SOLUCION O PAGO Y/O EXTINCION DE LA OBLIGACION"
             r"|ACUERDO DE MEDIACION|ARCHIVO POR ACUERDO DE MEDIACION"
-            r"|CONCLUSION DE LA EJECUCION(?: Y ARCHIVO DEL PROCESO)?|ACUERDO DE CONCILIACION)"
+            r"|CONCLUSION DE LA EJECUCION|ACUERDO DE CONCILIACION)\b"
             + _CONDICION_TIPO_AUTO
         )),
         ("ARCHIVADA", re.compile(
             r"^\s*(?:ARCHIVO POR NO COMPLETAR DEMANDA|ARCHIVO DE LA CAUSA|ARCHIVO DEL PROCESO"
-            r"|ARCHIVO POR RETIRO DE LA DEMANDA|INHIBICION|ABSTENCION)"
+            r"|ARCHIVO POR RETIRO DE LA DEMANDA)\b"
             + _CONDICION_TIPO_AUTO
         )),
     )
-    # Una nulidad o revocatoria posterior deja sin efecto el cierre.
+    # Una nulidad o revocatoria concedida después del cierre lo deja sin efecto.
     PATRON_REACTIVACION = re.compile(
         r"^\s*(?:NULIDAD PROCESAL|NULIDAD POR FALTA DE (?:CITACION|NOTIFICACION)"
-        r"|ACEPTAR REVOCATORIA)\b"
-        r"|\bDEJA(?:R)? SIN EFECTO (?:EL|LA) (?:AUTO|ABANDONO|ARCHIVO|PROVIDENCIA)"
-        r"|\bREVOCA(?:R)? EL AUTO\b"
+        r"|NULIDAD DE REMATE|ACEPTAR REVOCATORIA)\b" + _CONDICION_TIPO_AUTO
     )
+    # Providencias que niegan lo que su rótulo nombra: no cierran ni reactivan.
+    PATRON_NEGACION = re.compile(
+        r"\b(?:NIEGA(?:SE)?|NIEGUESE|RECHAZA(?:SE)?|RECHACESE|DESECHA(?:SE)?|NO HA LUGAR|NO PROCEDE)\b"
+        r".{0,60}\b(?:ABANDON|NULIDAD|REVOCATORIA|ARCHIV|ACUERDO|TRANSACCION)"
+        r"|\b(?:ABANDON|NULIDAD|REVOCATORIA|ARCHIV|ACUERDO|TRANSACCION)\w*"
+        r".{0,60}\b(?:IMPROCEDENTE|NO HA LUGAR|SE NIEGA|SE RECHAZA)\b"
+    )
+    FASES_CONCLUSION = {
+        "6.4 REMATE": "CASO SOLVENTADO POR REMATE",
+        "6.5 CONGELAMIENTO DE CUENTAS / CIERRE": "CASO SOLVENTADO POR CONGELAMIENTO",
+    }
 
     @classmethod
     def _determinar_condicion(cls, actuaciones, hallazgos, mensaje_especial):
-        """Clasifica si la causa sigue VIGENTE o fue cerrada por un auto.
+        """Clasifica si la causa sigue VIGENTE o fue cerrada.
 
-        Se usa el último auto de cierre de la rama evaluada. Vuelve a VIGENTE
-        si después hay una nulidad/revocatoria o un hito procesal posterior a
-        la citación (la causa siguió avanzando).
+        Se usa el último cierre de la rama evaluada: un auto de archivo,
+        abandono o conclusión, o el remate/congelamiento que solventó la
+        causa. Vuelve a VIGENTE si después se concede una nulidad o
+        revocatoria, o si tras un auto de cierre la causa siguió avanzando
+        (un hito desde la citación en adelante).
         """
         cierre = None
         reactivaciones = []
@@ -2135,39 +2147,45 @@ class MotorInferenciaProcesal:
             # El archivo de un cuaderno deprecatorio cierra solo esa diligencia.
             if "DEPRECATORI" in normalizar_texto(act.get("ORIGEN_CARPETA") or ""):
                 continue
-            for campo in ("titulo", "detalle"):
-                texto = re.sub(r"\s+", " ", normalizar_texto(act.get(campo, ""))).strip()
-                if not texto:
-                    continue
-                if cls.PATRON_REACTIVACION.search(texto):
-                    reactivaciones.append(fecha)
-                    break
-                condicion = next(
-                    (c for c, patron in cls.PATRONES_CONDICION if patron.search(texto)),
-                    None,
-                )
-                if condicion:
-                    if cierre is None or fecha >= cierre["orden"]:
-                        cierre = {
-                            "orden": fecha, "condicion": condicion,
-                            "fecha": act.get("fecha"), "actuacion": texto[:300],
-                        }
-                    break
+            # El rótulo manda; sin título, el inicio del detalle hace de rótulo.
+            rotulo = re.sub(r"\s+", " ", normalizar_texto(
+                act.get("titulo") or str(act.get("detalle") or "")[:200]
+            )).strip()
+            if not rotulo:
+                continue
+            cuerpo = re.sub(r"\s+", " ", normalizar_texto(act.get("detalle", "")))
+            if cls.PATRON_NEGACION.search(cuerpo):
+                continue
+            if cls.PATRON_REACTIVACION.search(rotulo):
+                reactivaciones.append(fecha)
+                continue
+            condicion = next(
+                (c for c, patron in cls.PATRONES_CONDICION if patron.search(rotulo)),
+                None,
+            )
+            if condicion and (cierre is None or fecha >= cierre["orden"]):
+                cierre = {
+                    "orden": fecha, "condicion": condicion, "por_auto": True,
+                    "fecha": act.get("fecha"), "actuacion": rotulo[:300],
+                }
 
-        if mensaje_especial in (
-            "CASO SOLVENTADO POR REMATE", "CASO SOLVENTADO POR CONGELAMIENTO"
-        ):
-            return {
-                "condicion": "CONCLUIDA",
-                "fecha_condicion": cierre["fecha"] if cierre and cierre["condicion"] == "CONCLUIDA" else None,
-                "actuacion_condicion": mensaje_especial,
-            }
+        if mensaje_especial in cls.FASES_CONCLUSION.values():
+            fase = next(f for f, m in cls.FASES_CONCLUSION.items() if m == mensaje_especial)
+            hito = cls._hallazgo_mas_reciente(hallazgos, fase)
+            orden = cls._fecha_ordenable(hito.get("fecha")) if hito else datetime.min
+            if cierre is None or orden >= cierre["orden"]:
+                cierre = {
+                    "orden": orden, "condicion": "CONCLUIDA", "por_auto": False,
+                    "fecha": hito.get("fecha") if hito else None,
+                    "actuacion": mensaje_especial,
+                }
+
         if cierre is None:
             return {}
         if any(fecha > cierre["orden"] for fecha in reactivaciones):
             return {}
         indice_citacion = cls.obtener_indice_fase("2.1 CITACION (PERSONA/BOLETA)")
-        if any(
+        if cierre["por_auto"] and any(
             h.get("prioridad", -1) >= indice_citacion
             and cls._fecha_ordenable(h.get("fecha")) > cierre["orden"]
             for h in hallazgos

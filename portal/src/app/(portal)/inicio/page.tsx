@@ -201,10 +201,10 @@ async function consultarPanorama(supabase: Supabase) {
   ])
   if (etapas.error) console.error('No se pudo cargar el resumen por etapa:', etapas.error.message)
   if (actividad.error) console.error('No se pudo cargar la actividad diaria:', actividad.error.message)
-  if (etapas.error || actividad.error) return null
-  // Sin la vista de condición el gráfico se muestra igual; solo falta el desglose de cerradas.
   if (condiciones.error) console.error('No se pudo cargar el resumen por condición:', condiciones.error.message)
-  const cerradas: CondicionResumen[] = (condiciones.data ?? []).flatMap((c) =>
+  // Sin el desglose por condición, el gráfico de "vigentes" no sería fiable: se muestra el aviso.
+  if (etapas.error || actividad.error || condiciones.error) return null
+  const cerradas: CondicionResumen[] = condiciones.data.flatMap((c) =>
     c.condicion && c.condicion !== 'VIGENTE' ? [{ condicion: c.condicion, causas: c.causas ?? 0 }] : [],
   )
   let sinEtapa = 0

@@ -87,10 +87,60 @@ class TestCondicionCausa(unittest.TestCase):
     def test_remate_concluye(self):
         r = inferir(BASE + [
             {"fecha": "10/03/2024", "titulo": "MANDAMIENTO DE EJECUCION", "detalle": "MANDAMIENTO DE EJECUCION"},
-            {"fecha": "10/06/2025", "titulo": "ACTA DE REMATE", "detalle": "AUTO DE ADJUDICACION DEL REMATE"},
+            {"fecha": "10/06/2025", "titulo": "AUTO DE ADJUDICACION", "detalle": "AUTO DE ADJUDICACION DEL REMATE"},
         ])
-        if r.get("MENSAJE_ESPECIAL") == "CASO SOLVENTADO POR REMATE":
-            self.assertEqual(r.get("CONDICION"), "CONCLUIDA")
+        self.assertEqual(r.get("MENSAJE_ESPECIAL"), "CASO SOLVENTADO POR REMATE")
+        self.assertEqual(r.get("CONDICION"), "CONCLUIDA")
+        self.assertEqual(r.get("FECHA_CONDICION"), "10/06/2025")
+
+    def test_nulidad_de_remate_posterior_reactiva(self):
+        r = inferir(BASE + [
+            {"fecha": "10/03/2024", "titulo": "MANDAMIENTO DE EJECUCION", "detalle": "MANDAMIENTO DE EJECUCION"},
+            {"fecha": "10/06/2025", "titulo": "AUTO DE ADJUDICACION", "detalle": "AUTO DE ADJUDICACION DEL REMATE"},
+            {"fecha": "20/06/2025", "titulo": "NULIDAD DE REMATE (AUTO INTERLOCUTORIO)", "detalle": "SE DECLARA LA NULIDAD DEL REMATE"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "VIGENTE")
+
+    def test_solicitud_de_abandono_no_cierra(self):
+        r = inferir(BASE + [{
+            "fecha": "05/09/2025", "titulo": "ESCRITO",
+            "detalle": "ABANDONO DE LA CAUSA SOLICITADO POR LA DEMANDADA",
+        }])
+        self.assertEqual(r.get("CONDICION"), "VIGENTE")
+
+    def test_rotulo_sin_tipo_de_auto_no_cierra(self):
+        r = inferir(BASE + [{
+            "fecha": "05/09/2025", "detalle": "ABANDONO DE LA CAUSA SOLICITADO POR LA DEMANDADA",
+        }])
+        self.assertEqual(r.get("CONDICION"), "VIGENTE")
+
+    def test_auto_que_niega_el_abandono_no_cierra(self):
+        r = inferir(BASE + [{
+            "fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)",
+            "detalle": "SE NIEGA EL PEDIDO DE ABANDONO POR CUANTO EXISTE IMPULSO DE LA PARTE ACTORA",
+        }])
+        self.assertEqual(r.get("CONDICION"), "VIGENTE")
+
+    def test_nulidad_negada_no_reactiva(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)", "detalle": "SE DECLARA EL ABANDONO"},
+            {"fecha": "20/10/2025", "titulo": "NULIDAD PROCESAL DECLARADA DE OFICIO ART. 110 (AUTO INTERLOCUTORIO)",
+             "detalle": "SE NIEGA LA NULIDAD SOLICITADA"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
+
+    def test_inhibicion_no_archiva(self):
+        r = inferir(BASE + [{
+            "fecha": "05/09/2025", "titulo": "INHIBICION (AUTO INTERLOCUTORIO)",
+            "detalle": "EL JUEZ SE INHIBE Y REMITE LA CAUSA AL COMPETENTE",
+        }])
+        self.assertEqual(r.get("CONDICION"), "VIGENTE")
+
+    def test_rotulo_dom_con_cuerpo_cierra(self):
+        # En la ruta DOM el título es la fila completa: rótulo y cuerpo juntos.
+        texto = "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO) VISTOS: SE DECLARA EL ABANDONO"
+        r = inferir(BASE + [{"fecha": "05/09/2025", "titulo": texto, "detalle": texto}])
+        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
 
     def test_cierre_no_altera_etapa_ni_fase(self):
         sin = inferir(BASE)
