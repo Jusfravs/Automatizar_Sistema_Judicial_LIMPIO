@@ -21,7 +21,7 @@ WHERE e.condicion = 'VIGENTE'
 CREATE OR REPLACE VIEW public.v_resumen_condicion
 WITH (security_invoker = on) AS
 SELECT k.condicion, count(e.numero_causa)::INTEGER AS causas
-FROM (VALUES ('VIGENTE'), ('ARCHIVADA'), ('ABANDONADA'), ('CONCLUIDA')) AS k(condicion)
+FROM (VALUES ('VIGENTE'), ('ARCHIVADA'), ('ABANDONADA'), ('CONCLUIDA'), ('POR_CONFIRMAR')) AS k(condicion)
 LEFT JOIN public.expedientes e ON e.condicion = k.condicion
 GROUP BY k.condicion;
 

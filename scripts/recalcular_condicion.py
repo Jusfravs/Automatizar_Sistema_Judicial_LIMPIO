@@ -11,8 +11,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 from collections import Counter
 from pathlib import Path
+
+# Permite ejecutarlo como `python scripts/recalcular_condicion.py` desde la raíz.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from psycopg2.extras import Json
 
@@ -76,8 +80,8 @@ def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0) -> dic
             with conn.cursor() as cursor:
                 cursor.execute(f"""
                     SELECT numero_causa, datos_json, {columna} FROM expedientes
-                    WHERE numero_causa > %s ORDER BY numero_causa LIMIT 50
-                """, (ultima_causa,))
+                    WHERE numero_causa > %s ORDER BY numero_causa LIMIT %s
+                """, (ultima_causa, min(50, limite - resumen["vistas"]) if limite else 50))
                 filas = cursor.fetchall()
             if not filas:
                 break

@@ -14,7 +14,7 @@ import { ChartTooltip, TooltipContent } from '@/components/charts/tooltip'
 import { Card, CardBody, CardHeader } from '@/components/ui'
 import { FOCO } from '@/components/ui/estilos'
 import { cx } from '@/lib/cx'
-import { CONDICIONES_CASO, CONDICION_ETIQUETAS } from '@/lib/casos'
+import { CONDICIONES_CASO, CONDICION_ETIQUETAS, condicionEnRecuento } from '@/lib/casos'
 
 /** `orden` 1–6 es el número procesal; ≥ 100, una etapa del catálogo sin número (va al final, sin prefijo). */
 export type EtapaResumen = { orden: number; corta: string; nombre: string; causas: number }
@@ -204,7 +204,7 @@ function GraficoEtapas({ etapas, sinEtapa, cerradas }: { etapas: EtapaResumen[];
         )}
         {conCierre.length > 0 ? (
           <p className="mt-auto text-xs text-muted">
-            Se cuentan aparte las causas cerradas:{' '}
+            Se cuentan aparte las causas cerradas o por confirmar:{' '}
             {conCierre.map((c, i) => (
               <span key={c.condicion}>
                 {i > 0 ? ', ' : null}
@@ -212,8 +212,7 @@ function GraficoEtapas({ etapas, sinEtapa, cerradas }: { etapas: EtapaResumen[];
                   href={`/casos?condicion=${c.condicion}`}
                   className={cx('rounded-sm font-medium text-fg underline-offset-2 hover:text-primary hover:underline', FOCO)}
                 >
-                  {intFmt(c.causas)} {(CONDICION_ETIQUETAS[c.condicion] ?? c.condicion).toLowerCase()}
-                  {c.causas === 1 ? '' : 's'}
+                  {intFmt(c.causas)} {condicionEnRecuento(c.condicion, c.causas)}
                 </Link>
               </span>
             ))}

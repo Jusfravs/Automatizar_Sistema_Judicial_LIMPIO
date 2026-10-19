@@ -11,7 +11,6 @@ import {
   COLUMNAS_AUDITORIA,
   COLUMNAS_EXPEDIENTE_DETALLE,
   COLUMNAS_REVISION,
-  CONDICION_ETIQUETAS,
   DECISION_ETIQUETAS,
   esCerrada,
   leerDecisionIA,
@@ -21,6 +20,7 @@ import {
   primerValor,
   puedeAceptarIA,
   textoPlano,
+  tituloCondicion,
   type ActuacionDetalle,
   type AuditoriaDetalle,
   type DecisionRevision,
@@ -164,9 +164,12 @@ export default async function CasoPage({ params, searchParams }: Props) {
       />
 
       {esCerrada(expediente.condicion) && (
-        <Alert titulo={`Causa ${(CONDICION_ETIQUETAS[expediente.condicion] ?? expediente.condicion).toLowerCase()}`}>
+        <Alert tono={expediente.condicion === 'POR_CONFIRMAR' ? 'atencion' : 'info'} titulo={tituloCondicion(expediente.condicion)}>
           {expediente.fecha_condicion ? `Desde el ${formatFechaProcesal(expediente.fecha_condicion)}. ` : ''}
           {expediente.actuacion_condicion ? `Actuación: ${textoPlano(expediente.actuacion_condicion)}. ` : ''}
+          {expediente.condicion === 'POR_CONFIRMAR'
+            ? 'El auto podría cerrar la causa, pero no se pudo leer su parte resolutiva: revísalo en SATJE. '
+            : ''}
           La fase actual se muestra atenuada: es donde quedó la causa y desde donde se retoma si se reactiva.
         </Alert>
       )}
