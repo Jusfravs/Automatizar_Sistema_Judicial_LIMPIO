@@ -19,6 +19,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+import psycopg2
+
 from src.almacen_b2 import ClienteB2, PREFIJO_B2
 from src.logger_config import obtener_logger
 
@@ -242,12 +244,20 @@ class RepositorioSolicitudes:
     def _ejecutar(self, sql: str, parametros=(), *, una: bool = False):
         from psycopg2.extras import RealDictCursor
 
-        with self.repo._connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(sql, parametros)
-                if cur.description is None:
-                    return cur.rowcount
-                return cur.fetchone() if una else cur.fetchall()
+        inicio = monotonic()
+        operacion = sql.lstrip().split(None, 1)[0].upper()
+        try:
+            with self.repo._connection() as conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    cur.execute(sql, parametros)
+                    if cur.description is None:
+                        return cur.rowcount
+                    return cur.fetchone() if una else cur.fetchall()
+        finally:
+            duracion = monotonic() - inicio
+            if duracion >= 2:
+                logger.warning("[PORTAL] Consulta PostgreSQL lenta: %s, %.2f s.",
+                               operacion, duracion)
 
     def verificar_tabla(self) -> bool:
         fila = self._ejecutar(
@@ -529,17 +539,36 @@ class ServicioPortal:
 
     def ejecutar(self, *, una_vez: bool = False, detener: threading.Event | None = None) -> None:
         detener = detener or threading.Event()
-        cerradas = self.solicitudes.cerrar_interrumpidas(self.worker_host)
-        if cerradas:
-            logger.warning("[PORTAL] %s solicitud(es) interrumpidas se marcaron como cerradas.",
-                           cerradas)
         logger.info("[PORTAL] Servicio activo en %s; consulta cada %ss.",
                     self.worker_host, self.intervalo)
+        recuperacion_pendiente = True
         with self.latido:
             while not detener.is_set():
                 self.latido.vuelta()
+                if recuperacion_pendiente:
+                    try:
+                        cerradas = self.solicitudes.cerrar_interrumpidas(self.worker_host)
+                    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                        logger.warning("[PORTAL] PostgreSQL no disponible al iniciar; "
+                                       "se intentará reconectar en el siguiente sondeo.",
+                                       exc_info=True)
+                        if una_vez:
+                            raise
+                        detener.wait(self.intervalo)
+                        continue
+                    if cerradas:
+                        logger.warning("[PORTAL] %s solicitud(es) interrumpidas se marcaron como cerradas.",
+                                       cerradas)
+                    recuperacion_pendiente = False
                 try:
                     atendida = self.atender_una()
+                except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                    # Cada consulta abre una conexión nueva. El siguiente sondeo
+                    # reconecta sin repetir el trabajo de un lote ya iniciado.
+                    logger.warning("[PORTAL] Conexión PostgreSQL interrumpida; "
+                                   "se intentará reconectar en el siguiente sondeo.",
+                                   exc_info=True)
+                    atendida = False
                 except Exception:
                     logger.exception("[PORTAL] No se pudieron consultar las solicitudes.")
                     atendida = False
