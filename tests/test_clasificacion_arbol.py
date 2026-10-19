@@ -2248,5 +2248,70 @@ class TestClasificacionArbol(unittest.TestCase):
         self.assertEqual(resultado["ULTIMA FASE"], "1.3 CALIFICACION")
         self.assertEqual(resultado["FASE ACTUAL"], "REVISION MANUAL")
 
+    def test_ejecutoria_de_auto_que_archiva_demanda_no_es_sentencia(self):
+        actuaciones = [
+            {"fecha": "17/09/2025", "detalle": (
+                "SE DISPONE EL ARCHIVO DE LA PRESENTE DEMANDA POR NO "
+                "COMPLETAR Y ACLARAR LOS REQUISITOS"
+            )},
+            {"fecha": "02/10/2025", "detalle": "RAZON DE EJECUTORIA (RAZON)"},
+            {"fecha": "2025-10-02", "detalle": (
+                "RAZON: EL AUTO DEFINITIVO DICTADO EN ESTA CAUSA "
+                "SE ENCUENTRA EJECUTORIADO POR EL MINISTERIO DE LA LEY"
+            )},
+        ]
+
+        resultado = MotorInferenciaProcesal.inferir_estado_procesal(actuaciones)
+
+        self.assertNotEqual(resultado.ultima_fase, "5.3 SENTENCIA EJECUTORIADA")
+        self.assertIn(resultado.ultima_fase, (
+            "1.1 PRESENTAR DEMANDA", "1.2 COMPLETAR/ACLARAR DEMANDA",
+        ))
+
+    def test_archivo_por_no_completar_y_ejecutoria_no_es_sentencia(self):
+        actuaciones = [
+            {"fecha": "01/12/2025", "detalle": "ORDENO COMPLETAR LA DEMANDA"},
+            {"fecha": "25/02/2026", "detalle":
+             "ARCHIVO POR NO COMPLETAR DEMANDA (AUTO INTERLOCUTORIO)"},
+            {"fecha": "12/03/2026", "detalle": "RAZON DE EJECUTORIA (RAZON)"},
+            {"fecha": "2026-03-12", "detalle":
+             "EL AUTO DEFINITIVO DE ESTA CAUSA SE ENCUENTRA EJECUTORIADO"},
+        ]
+
+        resultado = MotorInferenciaProcesal.inferir_estado_procesal(actuaciones)
+
+        self.assertNotEqual(resultado.ultima_fase, "5.3 SENTENCIA EJECUTORIADA")
+        self.assertIn(resultado.ultima_fase, (
+            "1.1 PRESENTAR DEMANDA", "1.2 COMPLETAR/ACLARAR DEMANDA",
+        ))
+
+    def test_retencion_futura_no_cierra_causa(self):
+        actuaciones = [
+            {"fecha": "19/12/2025", "detalle":
+             "MANDAMIENTO DE EJECUCION (AUTO INTERLOCUTORIO)"},
+            {"fecha": "29/06/2026", "detalle":
+             "OFICIESE AL BANCO POR VALORES QUE SERAN RETENIDOS DE LA CUENTA"},
+        ]
+
+        resultado = MotorInferenciaProcesal.inferir_estado_procesal(actuaciones)
+
+        self.assertEqual(resultado.ultima_fase, "6.2 MANDAMIENTO DE EJECUCION")
+        self.assertNotEqual(resultado.mensaje_especial,
+                            "CASO SOLVENTADO POR CONGELAMIENTO")
+
+    def test_resumen_anonimo_mismo_dia_no_subsana_fallo_individual(self):
+        actuaciones = [
+            {"fecha": "10/05/2023", "detalle": "AUTO DE CALIFICACION"},
+            {"fecha": "23/05/2023", "detalle":
+             "CITACION: NO REALIZADA - DESCONOCIDO (DEMANDADO PEREZ JUAN)"},
+            {"fecha": "23/05/2023", "detalle":
+             "CITACION: REALIZADA - EN PERSONA"},
+        ]
+
+        resultado = MotorInferenciaProcesal.inferir_estado_procesal(actuaciones)
+
+        self.assertEqual(resultado.ultima_fase, "1.3 CALIFICACION")
+
+
 if __name__ == "__main__":
     unittest.main()
