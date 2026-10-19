@@ -4,6 +4,9 @@ from contextlib import closing, contextmanager
 import sqlite3
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import psycopg2
 
 from src.coordinador_concurrente import (
     ExportadorResultadosEjecucion,
@@ -131,6 +134,32 @@ class ExportadorUnicoTests(unittest.TestCase):
 
 
 class RepositorioPostgresContratoTests(unittest.TestCase):
+    def test_conexion_tiene_limites_y_rollback_no_oculta_error_original(self):
+        repo = RepositorioColaPostgres("localhost", 5432, "u", "p", "d",
+                                      statement_timeout_ms=90000)
+        with patch("src.repositorio_postgres.psycopg2.connect") as conectar:
+            repo._get_connection()
+        self.assertEqual(conectar.call_args.kwargs["connect_timeout"], 10)
+        self.assertEqual(conectar.call_args.kwargs["options"],
+                         "-c statement_timeout=90000")
+
+        cerrada = MagicMock()
+        cerrada.closed = 1
+        repo._get_connection = lambda: cerrada
+        with self.assertRaisesRegex(psycopg2.OperationalError, "fallo original"):
+            with repo._connection():
+                raise psycopg2.OperationalError("fallo original")
+        cerrada.rollback.assert_not_called()
+        cerrada.close.assert_called_once()
+
+        abierta = MagicMock()
+        abierta.closed = 0
+        abierta.rollback.side_effect = psycopg2.InterfaceError("rollback falló")
+        repo._get_connection = lambda: abierta
+        with self.assertRaisesRegex(psycopg2.OperationalError, "fallo original"):
+            with repo._connection():
+                raise psycopg2.OperationalError("fallo original")
+
     def test_reserva_usa_skip_locked_y_devuelve_trabajo(self):
         class Cursor:
             def __init__(self):

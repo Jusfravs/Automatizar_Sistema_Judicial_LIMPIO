@@ -35,6 +35,12 @@ class GestorPostgres:
             password=self.password,
             dbname=self.dbname,
             connect_timeout=10,
+            options="-c statement_timeout=120000",
+            application_name="sistema_judicial_resultados",
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
             **opciones_tls,
         )
 
@@ -45,10 +51,17 @@ class GestorPostgres:
             yield conn
             conn.commit()
         except Exception:
-            conn.rollback()
+            if not conn.closed:
+                try:
+                    conn.rollback()
+                except Exception:
+                    logger.warning("No se pudo revertir la transacción PostgreSQL.", exc_info=True)
             raise
         finally:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                logger.warning("No se pudo cerrar la conexión PostgreSQL.", exc_info=True)
 
     def registrar_resultado(self, numero_causa, resultado, origen="ESATJE_TRANSACCIONAL", ciudad="QUITO"):
         """

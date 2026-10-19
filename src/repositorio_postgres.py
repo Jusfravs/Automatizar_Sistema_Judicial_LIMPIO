@@ -27,13 +27,16 @@ class RepositorioColaPostgres:
     """Fuente de verdad para ejecuciones con uno o mas trabajadores."""
 
     def __init__(self, host, port, user, password, dbname, connect_timeout=10,
-                 sslmode=None, sslrootcert=None):
+                 sslmode=None, sslrootcert=None, statement_timeout_ms=120000):
         self.host = host or "localhost"
         self.port = int(port or 5432)
         self.user = user or "judicial_app"
         self.password = password or ""
         self.dbname = dbname or "casos_judiciales"
         self.connect_timeout = int(connect_timeout)
+        self.statement_timeout_ms = int(statement_timeout_ms)
+        if self.statement_timeout_ms <= 0:
+            raise ValueError("statement_timeout_ms debe ser positivo")
         self.sslmode = sslmode
         self.sslrootcert = sslrootcert
 
@@ -48,6 +51,7 @@ class RepositorioColaPostgres:
             password=os.getenv(variable_password, ""),
             dbname=valores.get("nombre_db", os.getenv("POSTGRES_DB", "casos_judiciales")),
             connect_timeout=valores.get("connect_timeout", 10),
+            statement_timeout_ms=valores.get("statement_timeout_ms", 120000),
             sslmode=valores.get("sslmode", os.getenv("POSTGRES_SSLMODE")),
             sslrootcert=valores.get("sslrootcert", os.getenv("POSTGRES_SSLROOTCERT")),
         )
@@ -65,6 +69,7 @@ class RepositorioColaPostgres:
             password=self.password,
             dbname=self.dbname,
             connect_timeout=self.connect_timeout,
+            options=f"-c statement_timeout={self.statement_timeout_ms}",
             application_name="sistema_judicial",
             # Sin keepalive, una conexión cortada por la red deja la consulta esperando
             # para siempre y el servicio queda vivo pero sin atender lotes.
@@ -82,10 +87,17 @@ class RepositorioColaPostgres:
             yield conn
             conn.commit()
         except Exception:
-            conn.rollback()
+            if not conn.closed:
+                try:
+                    conn.rollback()
+                except Exception:
+                    logger.warning("No se pudo revertir la transacción PostgreSQL.", exc_info=True)
             raise
         finally:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                logger.warning("No se pudo cerrar la conexión PostgreSQL.", exc_info=True)
 
     def verificar_conexion(self):
         with self._connection() as conn:

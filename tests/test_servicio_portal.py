@@ -5,6 +5,7 @@ import threading
 import time
 import unittest
 import zipfile
+import psycopg2
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -247,6 +248,16 @@ class TestRepositorioSolicitudes(unittest.TestCase):
         self.assertIn("FOR UPDATE SKIP LOCKED", sql)
         self.assertIn("NOT cancelar", sql)
 
+    def test_consulta_lenta_registra_duracion_sin_parametros(self):
+        with patch("src.servicio_portal.monotonic", side_effect=[0, 2.5]), \
+             patch("src.servicio_portal.logger.warning") as advertir:
+            self.repositorio._ejecutar("SELECT %s", ("dato privado",))
+        mensaje, operacion, duracion = advertir.call_args.args
+        self.assertIn("Consulta PostgreSQL lenta", mensaje)
+        self.assertEqual(operacion, "SELECT")
+        self.assertEqual(duracion, 2.5)
+        self.assertNotIn("dato privado", str(advertir.call_args))
+
 
 class TestServicioPortal(unittest.TestCase):
     def setUp(self):
@@ -374,6 +385,53 @@ class TestServicioPortal(unittest.TestCase):
         self.servicio(solicitudes).ejecutar(una_vez=True)
         self.assertEqual(solicitudes.cerradas_para, "servidor")
         self.assertEqual(solicitudes.latidos[0], ("servidor", "ESPERANDO", None))
+
+    def test_sondeo_reconecta_tras_error_sin_repetir_lote(self):
+        solicitudes = SolicitudesFalsas([])
+        solicitudes.reservar = MagicMock(side_effect=[
+            psycopg2.OperationalError("conexión caída"), None,
+        ])
+        servicio = self.servicio(solicitudes)
+        servicio.latido = MagicMock()
+
+        class DosVueltas:
+            vueltas = 0
+
+            def is_set(self):
+                self.vueltas += 1
+                return self.vueltas > 2
+
+            def wait(self, _intervalo):
+                return False
+
+        with patch("src.servicio_portal.logger.warning") as advertir:
+            servicio.ejecutar(detener=DosVueltas())
+        self.assertEqual(solicitudes.reservar.call_count, 2)
+        self.assertIn("reconectar", advertir.call_args.args[0])
+
+    def test_arranque_espera_conexion_antes_de_reservar(self):
+        solicitudes = SolicitudesFalsas([])
+        solicitudes.cerrar_interrumpidas = MagicMock(side_effect=[
+            psycopg2.OperationalError("sin red"), 0,
+        ])
+        solicitudes.reservar = MagicMock(return_value=None)
+        servicio = self.servicio(solicitudes)
+        servicio.latido = MagicMock()
+
+        class DosVueltas:
+            vueltas = 0
+
+            def is_set(self):
+                self.vueltas += 1
+                return self.vueltas > 2
+
+            def wait(self, _intervalo):
+                return False
+
+        with patch("src.servicio_portal.logger.warning"):
+            servicio.ejecutar(detener=DosVueltas())
+        self.assertEqual(solicitudes.cerrar_interrumpidas.call_count, 2)
+        solicitudes.reservar.assert_called_once_with("servidor")
 
     def test_latido_marca_procesando_durante_el_lote_y_vuelve_a_esperando(self):
         (self.lote / "reporte_final.xlsx").write_bytes(b"final")
