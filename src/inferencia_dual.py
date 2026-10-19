@@ -193,16 +193,28 @@ def aplicar_jerarquia(
         datos["FUENTE_INFERENCIA"] = "MOTOR_RESPALDO"
         datos["MOTIVO_FUENTE"] = "IA_PAR_INVALIDO"
         return datos
-    if (datos.get("ETAPA ACTUAL"), datos.get("FASE ACTUAL")) != (etapa_actual, fase_actual):
-        datos["FECHA INICIAL FASE ACTUAL"] = None
-        datos["FECHA INICIO FASE ACTUAL"] = None
-    if (datos.get("ULTIMA ETAPA"), datos.get("ULTIMA FASE")) != (ultima_etapa, ultima_fase):
-        datos["FECHA FIN ULTIMA FASE"] = None
+    # NVIDIA propone estados, pero no fecha de hito validada. Conservar las
+    # fechas calculadas por el motor y dejar explícita su procedencia.
+    fechas_motor = any(
+        datos.get(clave) is not None for clave in (
+            "FECHA INICIAL FASE ACTUAL", "FECHA INICIO FASE ACTUAL",
+            "FECHA FIN ULTIMA FASE",
+        )
+    )
+    cambio_estado = (
+        (datos.get("ETAPA ACTUAL"), datos.get("FASE ACTUAL")) != (etapa_actual, fase_actual)
+        or (datos.get("ULTIMA ETAPA"), datos.get("ULTIMA FASE")) != (ultima_etapa, ultima_fase)
+    )
     datos.update({
         "ETAPA_PROCESAL": etapa_actual, "FASE_PROCESAL": fase_actual,
         "ETAPA ACTUAL": etapa_actual, "FASE ACTUAL": fase_actual,
         "ULTIMA ETAPA": ultima_etapa, "ULTIMA FASE": ultima_fase,
-        "FUENTE_INFERENCIA": "IA", "MOTIVO_FUENTE": "IA_CONFIANZA_SUFICIENTE",
+        "FUENTE_INFERENCIA": "IA",
+        "MOTIVO_FUENTE": (
+            "IA_CON_FECHAS_MOTOR" if cambio_estado and fechas_motor
+            else "IA_CONFIANZA_SUFICIENTE"
+        ),
+        "FUENTE_FECHAS": "MOTOR" if fechas_motor else "SIN_FECHA",
     })
     enriquecer_datos_procesales(datos)
     return datos

@@ -12,6 +12,12 @@ La comparación en sombra registra los dos pares de cada fuente. Las etiquetas h
 
 La jerarquía predeterminada sigue siendo `motor`. El envío de texto de actuaciones y la comparación dentro del lote están apagados por defecto.
 
+Cuando `ia_primero` acepta una etapa o fase distinta, conserva las fechas que
+calculó el motor y marca `FUENTE_FECHAS=MOTOR` y
+`MOTIVO_FUENTE=IA_CON_FECHAS_MOTOR`. NVIDIA no entrega una fecha de hito
+verificada; estas fechas pueden corresponder a la clasificación previa del
+motor y deben contrastarse antes de usar la cronología como definitiva.
+
 ## Evidencia estructurada y cierres (inferencia NVIDIA v4)
 
 La muestra de hasta 100 actuaciones conserva rótulos procesales intermedios para

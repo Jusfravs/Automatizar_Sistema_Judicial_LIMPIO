@@ -286,6 +286,7 @@ class InferenciaDualTests(unittest.TestCase):
             "ETAPA ACTUAL": "2 CITACION", "FASE ACTUAL": "2.1 CITACION",
             "FECHA FIN ULTIMA FASE": "01/01/2025",
             "FECHA INICIO FASE ACTUAL": "02/01/2025",
+            "FECHA INICIAL FASE ACTUAL": "02/01/2025",
         }
         propuesta = {"estado": "OK", "confianza": 0.91,
                      "requiere_revision_humana": False,
@@ -295,8 +296,11 @@ class InferenciaDualTests(unittest.TestCase):
         elegido = aplicar_jerarquia(dict(original), {"error": None}, propuesta, config)
         self.assertEqual(elegido["FUENTE_INFERENCIA"], "IA")
         self.assertEqual(elegido["FASE ACTUAL"], "3.1 CONTESTACION")
-        self.assertIsNone(elegido["FECHA INICIO FASE ACTUAL"])
-        self.assertIsNone(elegido["FECHA FIN ULTIMA FASE"])
+        self.assertEqual(elegido["FECHA INICIO FASE ACTUAL"], "02/01/2025")
+        self.assertEqual(elegido["FECHA INICIAL FASE ACTUAL"], "02/01/2025")
+        self.assertEqual(elegido["FECHA FIN ULTIMA FASE"], "01/01/2025")
+        self.assertEqual(elegido["FUENTE_FECHAS"], "MOTOR")
+        self.assertEqual(elegido["MOTIVO_FUENTE"], "IA_CON_FECHAS_MOTOR")
         self.assertEqual(elegido["fas_id FASE ACTUAL"], 82)
         inconsistente = aplicar_jerarquia(
             dict(original), {"error": None},
