@@ -20,6 +20,8 @@ temp_htmls/
 logs/
 scratch/
 network_capture*.json
+reporte_inferencia_dual.md
+reporte_inferencia_dual.csv
 # Secretos locales (nunca versionar claves de proveedores)
 .env
 .env.*

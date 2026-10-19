@@ -81,7 +81,8 @@ class BotJudicial:
     2. Ruta de Respaldo (Sincronización DOM): Freno de ejecución con wait_for_selector('text="Actor/Ofendido:"')
        para asegurar inyección en Angular antes de enviar el HTML a BeautifulSoup4.
     """
-    def __init__(self, url_portal, navegacion=None, captcha=None, proveedor_captcha=None):
+    def __init__(self, url_portal, navegacion=None, captcha=None, proveedor_captcha=None,
+                 inferencia_ia=None):
         self.url_portal = url_portal
         self.playwright = None
         self.browser = None
@@ -126,6 +127,7 @@ class BotJudicial:
         }
         self.captcha_config.update(captcha or {})
         self.proveedor_captcha = proveedor_captcha
+        self.inferencia_ia = dict(inferencia_ia or {})
         self._captcha_disponibilidad_verificada = False
         self._captcha_tareas_por_causa = {}
         self._captcha_tareas_activas = set()
@@ -961,6 +963,28 @@ class BotJudicial:
         enriquecer_datos_procesales(datos)
         if inferencia.get("MENSAJE_ESPECIAL"):
             datos["COMENTARIO_ULTIMO"] = inferencia.get("MENSAJE_ESPECIAL")
+        if alcance == "causa":
+            from src.inferencia_dual import aplicar_jerarquia
+
+            registro, propuesta = None, None
+            debe_comparar = (
+                self.inferencia_ia.get("sombra_en_lote") is True
+                or self.inferencia_ia.get("jerarquia", "motor") == "ia_primero"
+            )
+            if debe_comparar:
+                try:
+                    from src.inferencia_dual import comparar
+
+                    registro, propuesta = comparar(
+                        str(causa or datos.get("NUMERO_JUICIO") or ""),
+                        datos, actuaciones, inferencia, self.inferencia_ia,
+                    )
+                    datos["_INFERENCIA_DUAL"] = registro
+                except Exception as exc:
+                    # El error de IA no interrumpe ni cambia el resultado del motor.
+                    registro = {"error": "ERROR_COMPARACION"}
+                    logger.warning("[INFERENCIA_DUAL] Comparación omitida: %s", type(exc).__name__)
+            aplicar_jerarquia(datos, registro, propuesta, self.inferencia_ia)
         try:
             log_payload = {
                 "source": datos.get("ORIGEN_DATA") or "consolidado",
@@ -971,7 +995,8 @@ class BotJudicial:
                 "fase_deducida": datos["ULTIMA FASE"],
                 "etapa": datos["ULTIMA ETAPA"],
                 "fecha_final": datos["FECHA FIN ULTIMA FASE"],
-                "fase_actual": inferencia.get("FASE_ACTUAL"),
+                "fase_actual": datos.get("FASE ACTUAL"),
+                "fuente_inferencia": datos.get("FUENTE_INFERENCIA"),
                 "actuacion_respaldo": str(
                     inferencia.get("ACTUACION_RESPALDO") or ""
                 )[:500],
@@ -1503,8 +1528,10 @@ class BotJudicialTransaccional(BotJudicial):
         "VERIFICACION_MANUAL": {"RETORNANDO_AL_BUSCADOR"},
     }
 
-    def __init__(self, url_portal, navegacion=None, captcha=None, proveedor_captcha=None):
-        super().__init__(url_portal, navegacion, captcha, proveedor_captcha)
+    def __init__(self, url_portal, navegacion=None, captcha=None, proveedor_captcha=None,
+                 inferencia_ia=None):
+        super().__init__(url_portal, navegacion, captcha, proveedor_captcha,
+                         inferencia_ia=inferencia_ia)
         defaults = {
             "retorno_buscador_timeout_ms": 15000,
             "movimientos_timeout_ms": 30000,

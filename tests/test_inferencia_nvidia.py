@@ -69,7 +69,7 @@ class AuditoriaNvidiaTests(unittest.TestCase):
         self.assertEqual(contexto["inferencia_sistema"]["estado_actual"], {
             "eta_id": 15, "fas_id": 89,
         })
-        self.assertEqual(contexto["version"], "auditoria-nvidia-3")
+        self.assertEqual(contexto["version"], "auditoria-nvidia-4")
 
     def test_validador_rechaza_correccion_sin_cambio_y_conservar_con_cambio(self):
         contexto, mapa = construir_contexto(self.datos, self.actuaciones)
@@ -165,7 +165,7 @@ class HistorialPersistidoTests(unittest.TestCase):
             self.assertTrue(revisiones.empty)
             self.assertFalse(_version_vigente({"version_prompt": "auditoria-nvidia-1"}))
             self.assertFalse(_version_vigente({"version_prompt": "auditoria-nvidia-2"}))
-            self.assertTrue(_version_vigente({"version_prompt": "auditoria-nvidia-3"}))
+            self.assertTrue(_version_vigente({"version_prompt": "auditoria-nvidia-4"}))
 
     def test_auditor_elige_postgres_cuando_configurado(self):
         with tempfile.TemporaryDirectory() as temporal:
