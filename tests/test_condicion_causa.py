@@ -1,0 +1,102 @@
+import unittest
+
+from src.agente_extractor import MotorInferenciaProcesal
+
+
+def inferir(actuaciones):
+    return MotorInferenciaProcesal.inferir_estado_procesal(actuaciones)
+
+
+BASE = [
+    {"fecha": "01/02/2024", "titulo": "INGRESO DE CAUSA", "detalle": "INGRESO DE CAUSA"},
+    {"fecha": "10/02/2024", "titulo": "AUTO DE CALIFICACION", "detalle": "AUTO DE CALIFICACION, CITESE A LA PARTE DEMANDADA"},
+]
+
+
+class TestCondicionCausa(unittest.TestCase):
+    """La condición es un eje aparte de la etapa y la fase."""
+
+    def test_sin_cierre_es_vigente(self):
+        r = inferir(BASE)
+        self.assertEqual(r.get("CONDICION"), "VIGENTE")
+        self.assertIsNone(r.get("FECHA_CONDICION"))
+
+    def test_envio_al_archivo_general_sigue_vigente(self):
+        r = inferir(BASE + [{
+            "fecha": "01/06/2024",
+            "titulo": "ENVIO DEL PROCESO AL ARCHIVO GENERAL (RAZON)",
+            "detalle": "RAZON: SE REMITE EL PROCESO AL DEPARTAMENTO DE ARCHIVO, HASTA QUE SE REALICE EL IMPULSO PROCESAL RESPECTIVO",
+        }])
+        self.assertEqual(r.get("CONDICION"), "VIGENTE")
+
+    def test_abandono_por_falta_de_impulso(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
+             "detalle": "SE DECLARA EL ABANDONO DE LA CAUSA"},
+            {"fecha": "05/09/2025", "titulo": "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (RAZON DE NOTIFICACION)",
+             "detalle": "RAZON DE NOTIFICACION"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
+        self.assertEqual(r.get("FECHA_CONDICION"), "05/09/2025")
+        # La fase actual se conserva para retomarla si se reactiva.
+        self.assertTrue(r.get("FASE_ACTUAL"))
+
+    def test_archivo_por_no_completar_demanda(self):
+        r = inferir(BASE[:1] + [{
+            "fecha": "20/02/2024", "titulo": "ARCHIVO POR NO COMPLETAR DEMANDA (AUTO INTERLOCUTORIO)",
+            "detalle": "ARCHIVO POR NO COMPLETAR DEMANDA",
+        }])
+        self.assertEqual(r.get("CONDICION"), "ARCHIVADA")
+
+    def test_acuerdo_transaccional_concluye(self):
+        r = inferir(BASE + [{
+            "fecha": "15/03/2025", "titulo": "ACUERDO TRANSACCIONAL (AUTO INTERLOCUTORIO)",
+            "detalle": "SE APRUEBA EL ACUERDO TRANSACCIONAL",
+        }])
+        self.assertEqual(r.get("CONDICION"), "CONCLUIDA")
+
+    def test_derivacion_a_mediacion_no_concluye(self):
+        r = inferir(BASE + [{
+            "fecha": "15/03/2025", "titulo": "DERIVACION A MEDIACION (AUTO INTERLOCUTORIO)",
+            "detalle": "SE DERIVA LA CAUSA AL CENTRO DE MEDIACION",
+        }])
+        self.assertEqual(r.get("CONDICION"), "VIGENTE")
+
+    def test_nulidad_posterior_reactiva(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)", "detalle": "ABANDONO"},
+            {"fecha": "20/10/2025", "titulo": "NULIDAD PROCESAL DECLARADA DE OFICIO ART. 110 (AUTO INTERLOCUTORIO)",
+             "detalle": "SE DECLARA LA NULIDAD"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "VIGENTE")
+
+    def test_nulidad_anterior_no_reactiva(self):
+        r = inferir(BASE + [
+            {"fecha": "20/05/2025", "titulo": "NULIDAD POR FALTA DE CITACION (AUTO INTERLOCUTORIO)", "detalle": "NULIDAD"},
+            {"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)", "detalle": "ABANDONO"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
+
+    def test_archivo_de_deprecatorio_no_archiva_la_causa(self):
+        r = inferir(BASE + [{
+            "fecha": "05/09/2025", "titulo": "ARCHIVO DE LA CAUSA (AUTO RESOLUTIVO)", "detalle": "ARCHIVESE",
+            "ORIGEN_CARPETA": "CARATULA SORTEO DE DEPRECATORIOS",
+        }])
+        self.assertEqual(r.get("CONDICION"), "VIGENTE")
+
+    def test_remate_concluye(self):
+        r = inferir(BASE + [
+            {"fecha": "10/03/2024", "titulo": "MANDAMIENTO DE EJECUCION", "detalle": "MANDAMIENTO DE EJECUCION"},
+            {"fecha": "10/06/2025", "titulo": "ACTA DE REMATE", "detalle": "AUTO DE ADJUDICACION DEL REMATE"},
+        ])
+        if r.get("MENSAJE_ESPECIAL") == "CASO SOLVENTADO POR REMATE":
+            self.assertEqual(r.get("CONDICION"), "CONCLUIDA")
+
+    def test_cierre_no_altera_etapa_ni_fase(self):
+        sin = inferir(BASE)
+        con = inferir(BASE + [{"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)", "detalle": "ABANDONO"}])
+        self.assertEqual(con.get("ULTIMA_FASE"), sin.get("ULTIMA_FASE"))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -11,7 +11,9 @@ import {
   COLUMNAS_AUDITORIA,
   COLUMNAS_EXPEDIENTE_DETALLE,
   COLUMNAS_REVISION,
+  CONDICION_ETIQUETAS,
   DECISION_ETIQUETAS,
+  esCerrada,
   leerDecisionIA,
   leerPagina,
   nombreEtapa,
@@ -151,8 +153,23 @@ export default async function CasoPage({ params, searchParams }: Props) {
         tituloMono
         descripcion={`Actualizado: ${formatFecha(expediente.actualizado_en)}`}
         migas={[{ etiqueta: 'Casos', href: '/casos' }, { etiqueta: expediente.numero_causa }]}
-        acciones={expediente.estado ? <EstadoBadge tipo="caso" estado={expediente.estado} /> : undefined}
+        acciones={
+          expediente.estado || esCerrada(expediente.condicion) ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {esCerrada(expediente.condicion) ? <EstadoBadge tipo="condicion" estado={expediente.condicion} /> : null}
+              {expediente.estado ? <EstadoBadge tipo="caso" estado={expediente.estado} /> : null}
+            </div>
+          ) : undefined
+        }
       />
+
+      {esCerrada(expediente.condicion) && (
+        <Alert titulo={`Causa ${(CONDICION_ETIQUETAS[expediente.condicion] ?? expediente.condicion).toLowerCase()}`}>
+          {expediente.fecha_condicion ? `Desde el ${formatFechaProcesal(expediente.fecha_condicion)}. ` : ''}
+          {expediente.actuacion_condicion ? `Actuación: ${textoPlano(expediente.actuacion_condicion)}. ` : ''}
+          La fase actual se muestra atenuada: es donde quedó la causa y desde donde se retoma si se reactiva.
+        </Alert>
+      )}
 
       {expediente.mensaje_especial && (
         <Alert tono="atencion" titulo="Mensaje especial">
@@ -188,8 +205,10 @@ export default async function CasoPage({ params, searchParams }: Props) {
                     <Dato titulo="Fecha de cierre">{formatFechaProcesal(expediente.fecha_fin_ultima_fase)}</Dato>
                   </dl>
                 </div>
-                <div className="space-y-3 rounded-control bg-surface-2 p-4">
-                  <h3 className="text-sm font-semibold text-fg">Estado actual</h3>
+                <div className={cx('space-y-3 rounded-control bg-surface-2 p-4', esCerrada(expediente.condicion) && 'opacity-60')}>
+                  <h3 className="text-sm font-semibold text-fg">
+                    {esCerrada(expediente.condicion) ? 'Estado al cierre' : 'Estado actual'}
+                  </h3>
                   <dl className="space-y-3">
                     <Dato titulo="Etapa">{expediente.etapa_actual ?? '—'}</Dato>
                     <Dato titulo="Fase">{expediente.fase_actual ?? '—'}</Dato>

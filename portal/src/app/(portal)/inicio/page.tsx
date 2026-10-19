@@ -24,7 +24,7 @@ import type { Tono } from '@/lib/tonos'
 import RefrescoInicio from './RefrescoInicio'
 import { PulsoServidor } from './PulsoServidor'
 import { TrazoEnCurso } from './TrazoEnCurso'
-import { PanoramaCartera, type DiaActividad, type EtapaResumen } from './PanoramaCartera'
+import { PanoramaCartera, type CondicionResumen, type DiaActividad, type EtapaResumen } from './PanoramaCartera'
 
 export const metadata = { title: 'Inicio' }
 
@@ -194,13 +194,19 @@ const NOMBRES_ETAPA: Record<number, { corta: string; nombre: string }> = {
 
 /** Datos de "Panorama de la cartera". null si alguna consulta falló: la sección no se muestra. */
 async function consultarPanorama(supabase: Supabase) {
-  const [etapas, actividad] = await Promise.all([
+  const [etapas, actividad, condiciones] = await Promise.all([
     supabase.from('v_resumen_etapas_actuales').select('eta_id, etapa, causas'),
     supabase.from('v_actividad_diaria').select('dia, causas').order('dia'),
+    supabase.from('v_resumen_condicion').select('condicion, causas'),
   ])
   if (etapas.error) console.error('No se pudo cargar el resumen por etapa:', etapas.error.message)
   if (actividad.error) console.error('No se pudo cargar la actividad diaria:', actividad.error.message)
   if (etapas.error || actividad.error) return null
+  // Sin la vista de condición el gráfico se muestra igual; solo falta el desglose de cerradas.
+  if (condiciones.error) console.error('No se pudo cargar el resumen por condición:', condiciones.error.message)
+  const cerradas: CondicionResumen[] = (condiciones.data ?? []).flatMap((c) =>
+    c.condicion && c.condicion !== 'VIGENTE' ? [{ condicion: c.condicion, causas: c.causas ?? 0 }] : [],
+  )
   let sinEtapa = 0
   const porEtapa: EtapaResumen[] = []
   for (const fila of etapas.data) {
@@ -219,7 +225,7 @@ async function consultarPanorama(supabase: Supabase) {
   }
   porEtapa.sort((a, b) => a.orden - b.orden)
   const dias: DiaActividad[] = actividad.data.flatMap((d) => (d.dia ? [{ dia: d.dia, causas: d.causas ?? 0 }] : []))
-  return { etapas: porEtapa, sinEtapa, dias }
+  return { etapas: porEtapa, sinEtapa, dias, cerradas }
 }
 
 /** Todas las consultas del resumen con un mismo instante de referencia (fuera del render). */

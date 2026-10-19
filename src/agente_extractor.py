@@ -72,7 +72,7 @@ class ResultadoInferencia(tuple):
     def __new__(cls, ultima_etapa, ultima_fase, fecha_fin, etapa_actual=None, fase_actual=None, mensaje_especial=None, **_):
         return super().__new__(cls, (ultima_etapa, ultima_fase, fecha_fin))
 
-    def __init__(self, ultima_etapa, ultima_fase, fecha_fin, etapa_actual=None, fase_actual=None, mensaje_especial=None, actuacion_respaldo=None, regla_aplicada=None, fase_original=None, fecha_original=None, actuacion_pendiente_revision=None, fecha_inicio_fase_actual=None):
+    def __init__(self, ultima_etapa, ultima_fase, fecha_fin, etapa_actual=None, fase_actual=None, mensaje_especial=None, actuacion_respaldo=None, regla_aplicada=None, fase_original=None, fecha_original=None, actuacion_pendiente_revision=None, fecha_inicio_fase_actual=None, condicion=None, fecha_condicion=None, actuacion_condicion=None):
         self.ultima_etapa = ultima_etapa
         self.ultima_fase = ultima_fase
         self.fecha_fin_ultima_fase = fecha_fin
@@ -99,6 +99,12 @@ class ResultadoInferencia(tuple):
         self.fase_original = fase_original
         self.fecha_original = fecha_original
         self.actuacion_pendiente_revision = actuacion_pendiente_revision
+        # Tercer eje, independiente de etapa/fase: si la causa sigue viva o
+        # un auto la cerró (archivo, abandono o conclusión). La fase actual se
+        # conserva para retomarla si la causa se reactiva.
+        self.condicion = condicion or "VIGENTE"
+        self.fecha_condicion = fecha_condicion
+        self.actuacion_condicion = actuacion_condicion
 
     def get(self, key, default=None):
         mapping = {
@@ -122,6 +128,9 @@ class ResultadoInferencia(tuple):
             "FASE_ORIGINAL": self.fase_original,
             "FECHA_ORIGINAL": self.fecha_original,
             "ACTUACION_PENDIENTE_REVISION": self.actuacion_pendiente_revision,
+            "CONDICION": self.condicion,
+            "FECHA_CONDICION": self.fecha_condicion,
+            "ACTUACION_CONDICION": self.actuacion_condicion,
             # Los campos operativos históricos consumidos por el bot deben
             # representar el estado al que llegó la causa, no el hito previo
             # que lo habilitó. Los campos ULTIMA_* conservan ese hito y su
@@ -2084,6 +2093,92 @@ class MotorInferenciaProcesal:
             filtradas.append(actuacion)
         return filtradas
 
+    # Autos de SATJE que cierran la causa. Se reconocen por su rótulo (el
+    # título de la actuación) para no confundirlos con la razón de envío al
+    # archivo general, que es custodia documental "hasta impulso de las
+    # partes" y deja la causa VIGENTE.
+    _CONDICION_TIPO_AUTO = r"(?:\s*\((?:AUTO|RAZON DE NOTIFICACION|RESOLUCION|DECRETO|SENTENCIA)\b|\s*$)"
+    PATRONES_CONDICION = (
+        ("ABANDONADA", re.compile(r"^\s*ABANDONO\b[^(]{0,80}" + _CONDICION_TIPO_AUTO)),
+        ("CONCLUIDA", re.compile(
+            r"^\s*(?:ACUERDO TRANSACCIONAL|SOLUCION O PAGO Y/O EXTINCION DE LA OBLIGACION"
+            r"|ACUERDO DE MEDIACION|ARCHIVO POR ACUERDO DE MEDIACION"
+            r"|CONCLUSION DE LA EJECUCION(?: Y ARCHIVO DEL PROCESO)?|ACUERDO DE CONCILIACION)"
+            + _CONDICION_TIPO_AUTO
+        )),
+        ("ARCHIVADA", re.compile(
+            r"^\s*(?:ARCHIVO POR NO COMPLETAR DEMANDA|ARCHIVO DE LA CAUSA|ARCHIVO DEL PROCESO"
+            r"|ARCHIVO POR RETIRO DE LA DEMANDA|INHIBICION|ABSTENCION)"
+            + _CONDICION_TIPO_AUTO
+        )),
+    )
+    # Una nulidad o revocatoria posterior deja sin efecto el cierre.
+    PATRON_REACTIVACION = re.compile(
+        r"^\s*(?:NULIDAD PROCESAL|NULIDAD POR FALTA DE (?:CITACION|NOTIFICACION)"
+        r"|ACEPTAR REVOCATORIA)\b"
+        r"|\bDEJA(?:R)? SIN EFECTO (?:EL|LA) (?:AUTO|ABANDONO|ARCHIVO|PROVIDENCIA)"
+        r"|\bREVOCA(?:R)? EL AUTO\b"
+    )
+
+    @classmethod
+    def _determinar_condicion(cls, actuaciones, hallazgos, mensaje_especial):
+        """Clasifica si la causa sigue VIGENTE o fue cerrada por un auto.
+
+        Se usa el último auto de cierre de la rama evaluada. Vuelve a VIGENTE
+        si después hay una nulidad/revocatoria o un hito procesal posterior a
+        la citación (la causa siguió avanzando).
+        """
+        cierre = None
+        reactivaciones = []
+        for act in actuaciones:
+            fecha = cls._fecha_ordenable(act.get("fecha"))
+            # El archivo de un cuaderno deprecatorio cierra solo esa diligencia.
+            if "DEPRECATORI" in normalizar_texto(act.get("ORIGEN_CARPETA") or ""):
+                continue
+            for campo in ("titulo", "detalle"):
+                texto = re.sub(r"\s+", " ", normalizar_texto(act.get(campo, ""))).strip()
+                if not texto:
+                    continue
+                if cls.PATRON_REACTIVACION.search(texto):
+                    reactivaciones.append(fecha)
+                    break
+                condicion = next(
+                    (c for c, patron in cls.PATRONES_CONDICION if patron.search(texto)),
+                    None,
+                )
+                if condicion:
+                    if cierre is None or fecha >= cierre["orden"]:
+                        cierre = {
+                            "orden": fecha, "condicion": condicion,
+                            "fecha": act.get("fecha"), "actuacion": texto[:300],
+                        }
+                    break
+
+        if mensaje_especial in (
+            "CASO SOLVENTADO POR REMATE", "CASO SOLVENTADO POR CONGELAMIENTO"
+        ):
+            return {
+                "condicion": "CONCLUIDA",
+                "fecha_condicion": cierre["fecha"] if cierre and cierre["condicion"] == "CONCLUIDA" else None,
+                "actuacion_condicion": mensaje_especial,
+            }
+        if cierre is None:
+            return {}
+        if any(fecha > cierre["orden"] for fecha in reactivaciones):
+            return {}
+        indice_citacion = cls.obtener_indice_fase("2.1 CITACION (PERSONA/BOLETA)")
+        if any(
+            h.get("prioridad", -1) >= indice_citacion
+            and cls._fecha_ordenable(h.get("fecha")) > cierre["orden"]
+            for h in hallazgos
+        ):
+            return {}
+        return {
+            "condicion": cierre["condicion"],
+            "fecha_condicion": cierre["fecha"],
+            "actuacion_condicion": cierre["actuacion"],
+        }
+
     @classmethod
     def inferir_estado_procesal(
         cls, actuaciones, texto_global="", causa=None, demandados=None
@@ -2580,6 +2675,9 @@ class MotorInferenciaProcesal:
             fecha_original=fecha_original,
             actuacion_pendiente_revision=escrito_pendiente_revision,
             fecha_inicio_fase_actual=fecha_inicio_fase_actual,
+            **cls._determinar_condicion(
+                actuaciones_evaluar, hallazgos, mensaje_especial
+            ),
         )
 
 
@@ -2687,6 +2785,9 @@ class AgenteExtractor:
                 resultado["FASE ACTUAL"] = fase_operativa
                 resultado["fas_id FASE ACTUAL"] = res_inf.get("FAS_ID_FASE_ACTUAL")
                 resultado["FECHA INICIO FASE ACTUAL"] = fecha_fase_actual
+                resultado["CONDICION"] = res_inf.get("CONDICION")
+                resultado["FECHA CONDICION"] = res_inf.get("FECHA_CONDICION")
+                resultado["ACTUACION CONDICION"] = res_inf.get("ACTUACION_CONDICION")
                 if res_inf.get("MENSAJE_ESPECIAL"):
                     resultado["COMENTARIO_ULTIMO"] = res_inf.get("MENSAJE_ESPECIAL")
                 

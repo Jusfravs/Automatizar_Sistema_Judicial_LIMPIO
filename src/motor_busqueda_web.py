@@ -958,6 +958,9 @@ class BotJudicial:
         datos["ETAPA ACTUAL"] = etapa_operativa
         datos["FASE ACTUAL"] = fase_operativa
         datos["FECHA INICIO FASE ACTUAL"] = inferencia.get("FECHA_INICIO_FASE_ACTUAL")
+        datos["CONDICION"] = inferencia.get("CONDICION")
+        datos["FECHA CONDICION"] = inferencia.get("FECHA_CONDICION")
+        datos["ACTUACION CONDICION"] = inferencia.get("ACTUACION_CONDICION")
         enriquecer_datos_procesales(datos)
         if inferencia.get("MENSAJE_ESPECIAL"):
             datos["COMENTARIO_ULTIMO"] = inferencia.get("MENSAJE_ESPECIAL")
@@ -1293,6 +1296,9 @@ class BotJudicial:
                             datos["ETAPA ACTUAL"] = etapa_operativa
                             datos["FASE ACTUAL"] = fase_operativa
                             datos["FECHA INICIO FASE ACTUAL"] = fecha_fase_actual
+                            datos["CONDICION"] = res_api.get("CONDICION")
+                            datos["FECHA CONDICION"] = res_api.get("FECHA_CONDICION")
+                            datos["ACTUACION CONDICION"] = res_api.get("ACTUACION_CONDICION")
                             enriquecer_datos_procesales(datos)
                             if res_api.get("MENSAJE_ESPECIAL"):
                                 datos["COMENTARIO_ULTIMO"] = res_api.get("MENSAJE_ESPECIAL")

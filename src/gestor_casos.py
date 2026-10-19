@@ -44,10 +44,14 @@ class GestorCasos:
         'DIAS TRANSCURRIDOS',
         CAMPO_FECHA_ULTIMA_GESTION,
         CAMPO_ESTADO_ULTIMA_GESTION,
+        # Al final para no desplazar las columnas del molde original.
+        'CONDICION',
+        'FECHA CONDICION',
     ]
     COLUMNAS_FECHA_PROCESAL = {
         'FECHA FIN ULTIMA FASE',
         'FECHA INICIO FASE ACTUAL',
+        'FECHA CONDICION',
         CAMPO_FECHA_ULTIMA_GESTION,
     }
     FILA_ENCABEZADO_REPORTE = 6
@@ -634,6 +638,7 @@ class GestorCasos:
             'ULTIMA FASE': 32, 'FECHA INICIO FASE ACTUAL': 23,
             'eta_id ETAPA ACTUAL': 19, 'ETAPA ACTUAL': 30,
             'fas_id FASE ACTUAL': 18, 'FASE ACTUAL': 32,
+            'CONDICION': 14, 'FECHA CONDICION': 18,
             'DIAS TRANSCURRIDOS': 19,
             CAMPO_FECHA_ULTIMA_GESTION: 24,
             CAMPO_ESTADO_ULTIMA_GESTION: 38,
