@@ -234,6 +234,19 @@ class TestCondicionCausa(unittest.TestCase):
         ])
         self.assertEqual(r.get("CONDICION"), "POR_CONFIRMAR")
 
+    def test_decision_mixta_en_una_oracion_conserva_el_cierre(self):
+        r = inferir(BASE + [{"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)",
+                             "detalle": "SE DECLARA EL ABANDONO DEL PROCESO Y SE NIEGA EL PEDIDO DE COSTAS"}])
+        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
+
+    def test_dejar_sin_efecto_otro_archivo_no_reactiva(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)", "detalle": "SE DECLARA EL ABANDONO"},
+            {"fecha": "20/10/2025", "titulo": "PROVIDENCIA GENERAL (AUTO DE SUSTANCIACION)",
+             "detalle": "SE DEJA SIN EFECTO EL ARCHIVO DEL OFICIO 18"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
+
     def test_cierre_no_altera_etapa_ni_fase(self):
         sin = inferir(BASE)
         con = inferir(BASE + [{"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)", "detalle": "SE DECLARA EL ABANDONO"}])

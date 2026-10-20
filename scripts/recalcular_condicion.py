@@ -27,7 +27,7 @@ from src.agente_extractor import MotorInferenciaProcesal
 from src.repositorio_postgres import RepositorioColaPostgres
 
 
-def _historial_guardado(conn, numero_causa: str, respaldo=None) -> list[dict]:
+def _historial_guardado(conn, numero_causa: str, respaldo=None, resumen=None) -> list[dict]:
     """Historial de PostgreSQL; el texto vaciado se completa desde el respaldo."""
     with conn.cursor() as cursor:
         cursor.execute("""
@@ -45,6 +45,11 @@ def _historial_guardado(conn, numero_causa: str, respaldo=None) -> list[dict]:
         }
     historial = []
     for act_id, fecha, titulo, detalle, carpeta in filas:
+        if resumen is not None and not detalle:
+            # Fila compactada: se cuenta si el respaldo trae su texto.
+            resumen["filas_sin_detalle"] += 1
+            if act_id in textos:
+                resumen["filas_emparejadas"] += 1
         titulo_r, detalle_r = textos.get(act_id, ("", ""))
         titulo = titulo or titulo_r
         detalle = detalle or detalle_r
@@ -62,13 +67,14 @@ def _condicion(conn, numero_causa: str, payload, resumen: Counter, respaldo=None
     # El historial del lote queda en datos_json solo en algunas causas; el
     # resto se lee del historial append-only (compactado: sin detalle).
     actuaciones = (datos.get("HISTORIAL_ACTUACIONES")
-                   or _historial_guardado(conn, numero_causa, respaldo))
+                   or _historial_guardado(conn, numero_causa, respaldo, resumen))
     if not actuaciones:
         return None
-    # Cobertura: cuánto texto hay para decidir, no solo el rótulo.
+    # Cobertura: alguna actuación trae detalle además del rótulo. No acredita
+    # que haya una decisión legible: eso lo decide el motor (POR_CONFIRMAR).
     if any(str(a.get("detalle") or "").strip() not in ("", str(a.get("titulo") or "").strip())
            for a in actuaciones):
-        resumen["con_texto_resolutivo"] += 1
+        resumen["con_detalle"] += 1
     else:
         resumen["solo_rotulos"] += 1
     if any(not str(a.get("titulo") or "").strip() and not str(a.get("detalle") or "").strip()
@@ -98,14 +104,14 @@ def _procesar_lote(repo, aplicar, columna, desde, tamano, resumen, respaldo=None
             conn.set_session(readonly=True)
         with conn.cursor() as cursor:
             cursor.execute(f"""
-                SELECT numero_causa, datos_json, {columna} FROM expedientes
+                SELECT numero_causa, datos_json, {columna}, version_fuente_en FROM expedientes
                 WHERE numero_causa > %s ORDER BY numero_causa LIMIT %s
             """, (desde, tamano))
             filas = cursor.fetchall()
         if not filas:
             return None
         parcial = Counter()
-        for numero_causa, payload, condicion_actual in filas:
+        for numero_causa, payload, condicion_actual, version in filas:
             parcial["vistas"] += 1
             nueva = _condicion(conn, numero_causa, payload, parcial, respaldo)
             if nueva is None:
@@ -126,13 +132,17 @@ def _procesar_lote(repo, aplicar, columna, desde, tamano, resumen, respaldo=None
                             THEN jsonb_set(datos_json, '{datos}', (datos_json -> 'datos') || %s)
                             ELSE datos_json
                         END
-                    WHERE numero_causa = %s
+                    WHERE numero_causa = %s AND version_fuente_en IS NOT DISTINCT FROM %s
                 """, (
                     nueva["CONDICION"],
                     str(nueva["FECHA CONDICION"]) if nueva["FECHA CONDICION"] else None,
                     nueva["ACTUACION CONDICION"],
-                    Json(nueva), numero_causa,
+                    Json(nueva), numero_causa, version,
                 ))
+                # Un lote la actualizó entre la lectura y la escritura: manda
+                # el resultado nuevo, que ya trae su propia condición.
+                if cursor.rowcount == 0:
+                    parcial["omitidas_por_cambio"] += 1
         if aplicar:
             conn.commit()
         # Solo se suma al resumen cuando el lote terminó (y se confirmó).
@@ -164,6 +174,9 @@ def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0,
         conn.close()
     if aplicar and not con_columna:
         raise RuntimeError("FALTA_MIGRACION_005_CONDICION")
+    if aplicar and respaldo is None:
+        # Sin el texto compactado casi todo el histórico quedaría POR_CONFIRMAR.
+        raise RuntimeError("FALTA_RESPALDO: use --respaldo para --aplicar")
     # En seco y antes de la migración, todas cuentan como VIGENTE.
     columna = "condicion" if con_columna else "'VIGENTE'"
     ultima_causa = desde
@@ -188,6 +201,10 @@ def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0,
         print(f"... {resumen['vistas']} causas (hasta {ultima_causa})", file=sys.stderr, flush=True)
     if respaldo is not None:
         respaldo.close()
+    if resumen["filas_sin_detalle"]:
+        resumen["cobertura_respaldo_pct"] = round(
+            100 * resumen["filas_emparejadas"] / resumen["filas_sin_detalle"], 2
+        )
     return dict(resumen)
 
 

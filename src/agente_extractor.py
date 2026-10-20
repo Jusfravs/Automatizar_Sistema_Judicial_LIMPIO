@@ -2137,6 +2137,11 @@ class MotorInferenciaProcesal:
         "CONCLUIDA": r"ACUERDO|TRANSACCION|CONCILIACION|PAGO|OBLIGACION|ARCHIV|EJECUCION",
         "REACTIVACION": r"NULIDAD|NULO|REVOCATORIA|SIN EFECTO|REVOC",
     }
+    # Lo que se revoca debe ser el cierre de la causa, no el archivo de un oficio.
+    _OBJETO_CIERRE = (
+        r"ABANDON\w*|AUTO DE (?:ABANDONO|ARCHIVO)|AUTO (?:QUE|DE FECHA)\b.{0,60}\b(?:ABANDON|ARCHIV)"
+        r"|ARCHIVO (?:DE LA (?:CAUSA|DEMANDA|PRESENTE)|DEL (?:PROCESO|JUICIO|EXPEDIENTE))"
+    )
     # Fórmulas con que el juez resuelve (presente o imperativo, no infinitivo).
     PATRONES_RESOLUTIVOS = {
         "ABANDONADA": re.compile(
@@ -2156,14 +2161,14 @@ class MotorInferenciaProcesal:
         "REACTIVACION": re.compile(
             r"\b(?:SE DECLARA|DECLARO|DECLARESE)\b.{0,80}\b(?:NULIDAD|NULO)"
             r"|\bSE ACEPTA\b.{0,40}\b(?:NULIDAD|REVOCATORIA)"
-            r"|\b(?:SE REVOCA|REVOCO|REVOQUESE)\b.{0,60}\b(?:AUTO|PROVIDENCIA|ABANDON|ARCHIV)"
-            r"|\b(?:SE DEJA|DEJO|DEJESE)\b SIN EFECTO\b.{0,60}\b(?:AUTO|PROVIDENCIA|ABANDON|ARCHIV)"
+            r"|\b(?:SE REVOCA|REVOCO|REVOQUESE|SE DEJA SIN EFECTO|DEJO SIN EFECTO|DEJESE SIN EFECTO)\b"
+            r".{0,60}\b(?:" + _OBJETO_CIERRE + r")"
         ),
     }
     # Un auto con otro rótulo también puede dejar sin efecto el cierre.
     PATRON_REACTIVACION_EN_CUERPO = re.compile(
-        r"\b(?:SE DEJA|DEJO|DEJESE)\b SIN EFECTO\b.{0,60}\b(?:ABANDON|ARCHIV)"
-        r"|\b(?:SE REVOCA|REVOCO|REVOQUESE)\b.{0,60}\b(?:ABANDON|ARCHIV)"
+        r"\b(?:SE REVOCA|REVOCO|REVOQUESE|SE DEJA SIN EFECTO|DEJO SIN EFECTO|DEJESE SIN EFECTO)\b"
+        r".{0,60}\b(?:" + _OBJETO_CIERRE + r")"
     )
     FASES_CONCLUSION = {
         "6.4 REMATE": "CASO SOLVENTADO POR REMATE",
@@ -2180,7 +2185,11 @@ class MotorInferenciaProcesal:
         if resto == rotulo:
             return []
         return [
-            o.strip() for o in re.split(r"[.;:]\s+|\n", resto)
+            o.strip() for o in re.split(
+                r"[.;:]\s+|\n|,?\s+(?:Y|E|ASIMISMO|ADEMAS)\s+(?=(?:SE|NO|DECLAR|NIEG|RECHAZ|ARCHIV|ORDEN|DISPON)\w*\b)"
+                r"|,\s+(?=(?:SE|NO)\b)",
+                resto,
+            )
             if o.strip() and (con_peticiones or not cls.PATRON_PETICION.search(o))
         ]
 
