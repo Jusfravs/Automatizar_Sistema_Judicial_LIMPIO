@@ -23,6 +23,7 @@ import {
   CONDICION_ETIQUETAS,
   ESTADOS_CASO,
   esCerrada,
+  tieneAvisoCondicion,
   ESTADO_CASO_ETIQUETAS,
   escaparIlike,
   leerPagina,
@@ -201,13 +202,13 @@ function FaseEtapa({ fase, etapa }: { fase: string | null; etapa: string | null 
   )
 }
 
-/** Causa cerrada: la condición manda y la fase queda atenuada (es donde quedó la causa). */
+/** Con condición: badge encima; si el cierre está confirmado, la fase se atenúa (es donde quedó). */
 function FaseActual({ c }: { c: ExpedienteLista }) {
-  if (!esCerrada(c.condicion)) return <FaseEtapa fase={c.fase_actual} etapa={c.etapa_actual} />
+  if (!tieneAvisoCondicion(c.condicion)) return <FaseEtapa fase={c.fase_actual} etapa={c.etapa_actual} />
   return (
     <div className="min-w-0 space-y-1">
       <EstadoBadge tipo="condicion" estado={c.condicion} />
-      <div className="opacity-60">
+      <div className={cx(esCerrada(c.condicion) && 'opacity-60')}>
         <FaseEtapa fase={c.fase_actual} etapa={c.etapa_actual} />
       </div>
     </div>

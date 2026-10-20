@@ -182,6 +182,58 @@ class TestCondicionCausa(unittest.TestCase):
         ])
         self.assertEqual(r.get("CONDICION"), "ABANDONADA")
 
+    def test_peticion_de_declarar_abandono_no_cierra(self):
+        r = inferir(BASE + [{"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)",
+                             "detalle": "LA DEMANDADA SOLICITA DECLARAR EL ABANDONO DE LA CAUSA"}])
+        self.assertIn(r.get("CONDICION"), ("POR_CONFIRMAR", "VIGENTE"))
+
+    def test_peticion_de_archivo_no_archiva(self):
+        r = inferir(BASE + [{"fecha": "05/09/2025", "titulo": "ARCHIVO DE LA CAUSA (AUTO INTERLOCUTORIO)",
+                             "detalle": "LA DEMANDADA SOLICITA EL ARCHIVO DE LA CAUSA"}])
+        self.assertIn(r.get("CONDICION"), ("POR_CONFIRMAR", "VIGENTE"))
+
+    def test_escrito_agregado_no_concluye(self):
+        r = inferir(BASE + [{"fecha": "05/09/2025", "titulo": "ACUERDO TRANSACCIONAL (AUTO INTERLOCUTORIO)",
+                             "detalle": "SE AGREGA AL EXPEDIENTE LA SOLICITUD DE ARCHIVO DEL PROCESO"}])
+        self.assertIn(r.get("CONDICION"), ("POR_CONFIRMAR", "VIGENTE"))
+
+    def test_peticion_de_nulidad_no_reactiva(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)", "detalle": "SE DECLARA EL ABANDONO"},
+            {"fecha": "20/10/2025", "titulo": "NULIDAD PROCESAL (AUTO INTERLOCUTORIO)",
+             "detalle": "LA PARTE PIDE DECLARAR LA NULIDAD DEL PROCESO"},
+        ])
+        self.assertIn(r.get("CONDICION"), ("POR_CONFIRMAR", "ABANDONADA"))
+
+    def test_negacion_de_otro_pedido_no_anula_el_cierre(self):
+        r = inferir(BASE + [{"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)",
+                             "detalle": "SE DECLARA EL ABANDONO DEL PROCESO. SE NIEGA EL PEDIDO DE COSTAS."}])
+        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
+
+    def test_rotulo_deja_sin_efecto_reactiva(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)", "detalle": "SE DECLARA EL ABANDONO"},
+            {"fecha": "20/10/2025", "titulo": "DEJA SIN EFECTO EL AUTO DE ABANDONO (AUTO INTERLOCUTORIO)",
+             "detalle": "SE DEJA SIN EFECTO EL AUTO DE ABANDONO"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "VIGENTE")
+
+    def test_cuerpo_deja_sin_efecto_reactiva(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)", "detalle": "SE DECLARA EL ABANDONO"},
+            {"fecha": "20/10/2025", "titulo": "PROVIDENCIA GENERAL (AUTO DE SUSTANCIACION)",
+             "detalle": "VISTOS. SE DEJA SIN EFECTO EL AUTO DE ABANDONO Y CONTINUE LA CAUSA"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "VIGENTE")
+
+    def test_reactivacion_del_mismo_dia_queda_por_confirmar(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025 09:00", "titulo": "ABANDONO (AUTO RESOLUTIVO)", "detalle": "SE DECLARA EL ABANDONO"},
+            {"fecha": "05/09/2025 15:00", "titulo": "NULIDAD PROCESAL (AUTO INTERLOCUTORIO)",
+             "detalle": "SE DECLARA LA NULIDAD DE LO ACTUADO"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "POR_CONFIRMAR")
+
     def test_cierre_no_altera_etapa_ni_fase(self):
         sin = inferir(BASE)
         con = inferir(BASE + [{"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)", "detalle": "SE DECLARA EL ABANDONO"}])

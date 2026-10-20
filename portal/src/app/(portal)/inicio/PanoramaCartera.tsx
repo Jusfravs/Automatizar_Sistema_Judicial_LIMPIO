@@ -154,8 +154,9 @@ function GraficoEtapas({ etapas, sinEtapa, cerradas }: { etapas: EtapaResumen[];
   const { ref, visible } = useVisible()
   const datos = useMemo(() => etapas.map((e) => ({ etapa: e.orden < 100 ? `${e.orden} ${e.corta}` : e.corta, causas: e.causas, nombre: e.nombre })), [etapas])
   const total = etapas.reduce((s, e) => s + e.causas, 0)
+  const porConfirmar = cerradas.find((c) => c.condicion === 'POR_CONFIRMAR')?.causas ?? 0
   const conCierre = cerradas
-    .filter((c) => c.causas > 0)
+    .filter((c) => c.causas > 0 && c.condicion !== 'POR_CONFIRMAR')
     .sort((a, b) => CONDICIONES_CASO.indexOf(a.condicion) - CONDICIONES_CASO.indexOf(b.condicion))
   // Margen derecho: lo justo para la cifra más larga tras su barra.
   const margenDerecho = intFmt(Math.max(0, ...etapas.map((e) => e.causas))).length * 7 + 12
@@ -165,7 +166,7 @@ function GraficoEtapas({ etapas, sinEtapa, cerradas }: { etapas: EtapaResumen[];
       <CardHeader
         nivel={3}
         titulo="Causas por etapa procesal"
-        descripcion={`Etapa actual de ${intFmt(total)} ${total === 1 ? 'causa vigente' : 'causas vigentes'}, en orden del proceso`}
+        descripcion={`Etapa actual de ${intFmt(total)} ${total === 1 ? 'causa' : 'causas'} sin cierre confirmado, en orden del proceso`}
       />
       <CardBody className="flex flex-1 flex-col gap-3">
         {total === 0 ? (
@@ -204,7 +205,7 @@ function GraficoEtapas({ etapas, sinEtapa, cerradas }: { etapas: EtapaResumen[];
         )}
         {conCierre.length > 0 ? (
           <p className="mt-auto text-xs text-muted">
-            Se cuentan aparte las causas cerradas o por confirmar:{' '}
+            Se cuentan aparte las causas cerradas:{' '}
             {conCierre.map((c, i) => (
               <span key={c.condicion}>
                 {i > 0 ? ', ' : null}
@@ -219,8 +220,20 @@ function GraficoEtapas({ etapas, sinEtapa, cerradas }: { etapas: EtapaResumen[];
             .
           </p>
         ) : null}
-        {sinEtapa > 0 ? (
+        {porConfirmar > 0 ? (
           <p className={cx('text-xs text-muted', conCierre.length === 0 && 'mt-auto')}>
+            Incluye{' '}
+            <Link
+              href="/casos?condicion=POR_CONFIRMAR"
+              className={cx('rounded-sm font-medium text-fg underline-offset-2 hover:text-primary hover:underline', FOCO)}
+            >
+              {intFmt(porConfirmar)} con cierre por confirmar
+            </Link>
+            : un auto podría cerrarlas, pero su texto no es concluyente.
+          </p>
+        ) : null}
+        {sinEtapa > 0 ? (
+          <p className={cx('text-xs text-muted', conCierre.length === 0 && porConfirmar === 0 && 'mt-auto')}>
             {intFmt(sinEtapa)} {sinEtapa === 1 ? 'causa' : 'causas'} sin etapa (revisión manual, excluidas o sin datos) no
             {sinEtapa === 1 ? ' aparece' : ' aparecen'} en el gráfico.
           </p>
@@ -231,6 +244,7 @@ function GraficoEtapas({ etapas, sinEtapa, cerradas }: { etapas: EtapaResumen[];
           filas={[
             ...etapas.map((e): [string, number] => [e.orden < 100 ? `${e.orden}. ${e.nombre}` : e.nombre, e.causas]),
             ['Sin etapa', sinEtapa],
+            ...(porConfirmar > 0 ? [['Con cierre por confirmar (incluidas arriba)', porConfirmar] as [string, number]] : []),
             ...conCierre.map((c): [string, number] => [`${CONDICION_ETIQUETAS[c.condicion] ?? c.condicion} (aparte)`, c.causas]),
           ]}
         />

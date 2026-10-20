@@ -71,8 +71,14 @@ export function tituloCondicion(condicion: string): string {
   return `Causa ${(CONDICION_ETIQUETAS[condicion] ?? condicion).toLowerCase()}`
 }
 
+/** Cierre confirmado: la fase se atenúa y la causa se cuenta aparte. */
 export function esCerrada(condicion: string | null | undefined): boolean {
-  return !!condicion && condicion !== 'VIGENTE'
+  return condicion === 'ARCHIVADA' || condicion === 'ABANDONADA' || condicion === 'CONCLUIDA'
+}
+
+/** Lleva badge y aviso: cerrada o con un cierre que falta confirmar. */
+export function tieneAvisoCondicion(condicion: string | null | undefined): condicion is string {
+  return esCerrada(condicion) || condicion === 'POR_CONFIRMAR'
 }
 
 export const DECISIONES_REVISION = ['ACEPTAR_SISTEMA', 'ACEPTAR_IA', 'CORREGIR_MANUALMENTE', 'POSPONER'] as const

@@ -13,6 +13,7 @@ import {
   COLUMNAS_REVISION,
   DECISION_ETIQUETAS,
   esCerrada,
+  tieneAvisoCondicion,
   leerDecisionIA,
   leerPagina,
   nombreEtapa,
@@ -154,23 +155,22 @@ export default async function CasoPage({ params, searchParams }: Props) {
         descripcion={`Actualizado: ${formatFecha(expediente.actualizado_en)}`}
         migas={[{ etiqueta: 'Casos', href: '/casos' }, { etiqueta: expediente.numero_causa }]}
         acciones={
-          expediente.estado || esCerrada(expediente.condicion) ? (
+          expediente.estado || tieneAvisoCondicion(expediente.condicion) ? (
             <div className="flex flex-wrap items-center gap-2">
-              {esCerrada(expediente.condicion) ? <EstadoBadge tipo="condicion" estado={expediente.condicion} /> : null}
+              {tieneAvisoCondicion(expediente.condicion) ? <EstadoBadge tipo="condicion" estado={expediente.condicion} /> : null}
               {expediente.estado ? <EstadoBadge tipo="caso" estado={expediente.estado} /> : null}
             </div>
           ) : undefined
         }
       />
 
-      {esCerrada(expediente.condicion) && (
+      {tieneAvisoCondicion(expediente.condicion) && (
         <Alert tono={expediente.condicion === 'POR_CONFIRMAR' ? 'atencion' : 'info'} titulo={tituloCondicion(expediente.condicion)}>
           {expediente.fecha_condicion ? `Desde el ${formatFechaProcesal(expediente.fecha_condicion)}. ` : ''}
           {expediente.actuacion_condicion ? `Actuación: ${textoPlano(expediente.actuacion_condicion)}. ` : ''}
           {expediente.condicion === 'POR_CONFIRMAR'
-            ? 'El auto podría cerrar la causa, pero no se pudo leer su parte resolutiva: revísalo en SATJE. '
-            : ''}
-          La fase actual se muestra atenuada: es donde quedó la causa y desde donde se retoma si se reactiva.
+            ? 'Un auto podría cerrar la causa, pero su parte resolutiva no se pudo leer o no es concluyente: revísalo en SATJE. Mientras tanto, la causa se trata como vigente.'
+            : 'La fase actual se muestra atenuada: es donde quedó la causa y desde donde se retoma si se reactiva.'}
         </Alert>
       )}
 

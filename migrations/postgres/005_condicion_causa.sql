@@ -6,14 +6,9 @@ ALTER TABLE expedientes
     ADD COLUMN IF NOT EXISTS fecha_condicion VARCHAR(50),
     ADD COLUMN IF NOT EXISTS actuacion_condicion TEXT;
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'expedientes_condicion_check'
-    ) THEN
-        ALTER TABLE expedientes ADD CONSTRAINT expedientes_condicion_check
-            CHECK (condicion IN ('VIGENTE', 'ARCHIVADA', 'ABANDONADA', 'CONCLUIDA', 'POR_CONFIRMAR'));
-    END IF;
-END $$;
+-- Se reemplaza siempre: una versión anterior de esta migración tenía 4 valores.
+ALTER TABLE expedientes DROP CONSTRAINT IF EXISTS expedientes_condicion_check;
+ALTER TABLE expedientes ADD CONSTRAINT expedientes_condicion_check
+    CHECK (condicion IN ('VIGENTE', 'ARCHIVADA', 'ABANDONADA', 'CONCLUIDA', 'POR_CONFIRMAR'));
 
 CREATE INDEX IF NOT EXISTS idx_expedientes_condicion ON expedientes(condicion);

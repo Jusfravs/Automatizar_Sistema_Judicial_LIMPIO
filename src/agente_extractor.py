@@ -2116,61 +2116,102 @@ class MotorInferenciaProcesal:
     # Una nulidad o revocatoria concedida después del cierre lo deja sin efecto.
     PATRON_REACTIVACION = re.compile(
         r"^\s*(?:NULIDAD PROCESAL|NULIDAD POR FALTA DE (?:CITACION|NOTIFICACION)"
-        r"|NULIDAD DE REMATE|ACEPTAR REVOCATORIA)\b" + _CONDICION_TIPO_AUTO
+        r"|NULIDAD DE REMATE|ACEPTAR REVOCATORIA|(?:SE\s+)?DEJA(?:R)? SIN EFECTO"
+        r"|REVOCA\w*)\b" + _CONDICION_TIPO_AUTO
     )
-    # Providencias que niegan o solo tramitan lo que su rótulo nombra: no
-    # cierran ni reactivan.
-    PATRON_NEGACION = re.compile(
-        r"\b(?:NIEGA(?:SE)?|NIEGUESE|RECHAZA(?:SE)?|RECHACESE|DESECHA(?:SE)?|NO HA LUGAR"
-        r"|NO PROCEDE|NO SE ACEPTA|NO ACEPTA|INADMITE|NO SE DECLARA)\b"
-        r".{0,60}\b(?:ABANDON|NULIDAD|REVOCATORIA|ARCHIV|ACUERDO|TRANSACCION|PEDIDO|SOLICITUD)"
-        r"|\b(?:ABANDON|NULIDAD|REVOCATORIA|ARCHIV|ACUERDO|TRANSACCION)\w*"
-        r".{0,60}\b(?:IMPROCEDENTE|NO HA LUGAR|SE NIEGA|SE RECHAZA|NO SE ACEPTA)\b"
-        r"|\b(?:CORRE(?:R|SE)? TRASLADO|CORRASE TRASLADO|TRASLADO A LA CONTRAPARTE)\b"
+    # La parte resolutiva se lee oración por oración. Las oraciones que narran
+    # una petición o un trámite no deciden nada.
+    PATRON_PETICION = re.compile(
+        r"\b(?:SOLICITA\w*|PIDE\w*|PETICION\w*|PEDIDO|REQUIERE\w*|INSISTE\w*|ALEGA\w*"
+        r"|MANIFIESTA\w*|ESCRITO|AGREGA\w*|AGREGUESE|PARA RESOLVER|SE DECLARE|DECLARAR)\b"
     )
-    # Parte resolutiva que acredita lo que el rótulo nombra.
+    PATRON_TRASLADO = re.compile(r"\b(?:CORRE\w* TRASLADO|CORRASE TRASLADO|TRASLADO A LA CONTRAPARTE)\b")
+    PATRON_NEGACION_ORACION = re.compile(
+        r"\b(?:NIEGA\w*|NIEGUESE|RECHAZA\w*|RECHACESE|DESECHA\w*|NO HA LUGAR|NO PROCEDE"
+        r"|NO SE ACEPTA|NO ACEPTA|INADMITE\w*|NO SE DECLARA|IMPROCEDENTE)\b"
+    )
+    # Objeto de cada decisión: la negación solo cuenta si recae sobre él.
+    OBJETO_DECISION = {
+        "ABANDONADA": r"ABANDON",
+        "ARCHIVADA": r"ARCHIV",
+        "CONCLUIDA": r"ACUERDO|TRANSACCION|CONCILIACION|PAGO|OBLIGACION|ARCHIV|EJECUCION",
+        "REACTIVACION": r"NULIDAD|NULO|REVOCATORIA|SIN EFECTO|REVOC",
+    }
+    # Fórmulas con que el juez resuelve (presente o imperativo, no infinitivo).
     PATRONES_RESOLUTIVOS = {
         "ABANDONADA": re.compile(
-            r"\bDECLAR\w*\b.{0,80}\bABANDON|\bABANDON\w*\b.{0,80}\bDECLAR"
-            r"|\bOPERADO EL ABANDONO\b|\bEN ABANDONO\b|\bSE ACEPTA\b.{0,40}\bABANDON"
+            r"\b(?:SE DECLARA|DECLARO|DECLARASE|DECLARESE)\b.{0,80}\bABANDON"
+            r"|\bOPERADO EL ABANDONO\b|\bSE ACEPTA\b.{0,40}\bABANDON"
         ),
         "ARCHIVADA": re.compile(
-            r"\bARCHIVESE\b|\bARCHIVASE\b|\b(?:DISPONE|ORDENA|DISPONGO|ORDENO)\w*\b.{0,60}\bARCHIV"
-            r"|\bARCHIVO DE LA (?:CAUSA|DEMANDA|PRESENTE)\b|\bSE ARCHIVA\b"
+            r"\b(?:ARCHIVESE|ARCHIVASE|SE ARCHIVA)\b"
+            r"|\b(?:SE DISPONE|SE ORDENA|DISPONGO|ORDENO|DISPONGASE)\b.{0,60}\bARCHIV"
         ),
         "CONCLUIDA": re.compile(
-            r"\b(?:APRUEBA|APRUEBESE|HOMOLOGA|ACEPTA|ACEPTESE)\w*\b.{0,80}\b(?:ACUERDO|TRANSACCION|CONCILIACION|PAGO)"
-            r"|\bDECLAR\w*\b.{0,80}\b(?:EXTINGUID|TERMINAD|CONCLUID|CUMPLID)"
-            r"|\bARCHIVESE\b|\bARCHIVO DEL PROCESO\b"
+            r"\b(?:SE APRUEBA|APRUEBO|APRUEBESE|SE HOMOLOGA|HOMOLOGO|HOMOLOGUESE|SE ACEPTA|ACEPTESE)\b"
+            r".{0,80}\b(?:ACUERDO|TRANSACCION|CONCILIACION|PAGO)"
+            r"|\b(?:SE DECLARA|DECLARO|DECLARESE)\b.{0,80}\b(?:EXTINGUID|TERMINAD|CONCLUID|CUMPLID)"
+            r"|\b(?:ARCHIVESE|SE DISPONE EL ARCHIVO|SE ORDENA EL ARCHIVO)\b"
         ),
         "REACTIVACION": re.compile(
-            r"\bDECLAR\w*\b.{0,80}\bNULIDAD|\bNULIDAD\b.{0,80}\bDECLAR|\bSE ACEPTA\b.{0,40}\b(?:NULIDAD|REVOCATORIA)"
-            r"|\bREVOC\w*\b.{0,40}\b(?:AUTO|PROVIDENCIA)|\bDEJA(?:R|SE)? SIN EFECTO\b|\bNULO\b"
+            r"\b(?:SE DECLARA|DECLARO|DECLARESE)\b.{0,80}\b(?:NULIDAD|NULO)"
+            r"|\bSE ACEPTA\b.{0,40}\b(?:NULIDAD|REVOCATORIA)"
+            r"|\b(?:SE REVOCA|REVOCO|REVOQUESE)\b.{0,60}\b(?:AUTO|PROVIDENCIA|ABANDON|ARCHIV)"
+            r"|\b(?:SE DEJA|DEJO|DEJESE)\b SIN EFECTO\b.{0,60}\b(?:AUTO|PROVIDENCIA|ABANDON|ARCHIV)"
         ),
     }
+    # Un auto con otro rótulo también puede dejar sin efecto el cierre.
+    PATRON_REACTIVACION_EN_CUERPO = re.compile(
+        r"\b(?:SE DEJA|DEJO|DEJESE)\b SIN EFECTO\b.{0,60}\b(?:ABANDON|ARCHIV)"
+        r"|\b(?:SE REVOCA|REVOCO|REVOQUESE)\b.{0,60}\b(?:ABANDON|ARCHIV)"
+    )
     FASES_CONCLUSION = {
         "6.4 REMATE": "CASO SOLVENTADO POR REMATE",
         "6.5 CONGELAMIENTO DE CUENTAS / CIERRE": "CASO SOLVENTADO POR CONGELAMIENTO",
     }
 
     @classmethod
-    def _decision_del_auto(cls, rotulo, cuerpo, clave):
-        """Lee la parte resolutiva de un auto cuyo rótulo nombra un cierre o reactivación.
-
-        Devuelve ``"SI"`` si la acredita, ``"NO"`` si la niega o solo la tramita
-        y ``"SIN_TEXTO"`` si no hay texto decisorio (historial compactado o
-        solo el rótulo): en ese caso no se afirma nada.
-        """
-        if cls.PATRON_NEGACION.search(cuerpo):
-            return "NO"
+    def _oraciones_resolutivas(cls, rotulo, cuerpo, con_peticiones=False):
+        """Oraciones del cuerpo sin el rótulo; sin las que narran una petición salvo que se pidan."""
         # El rótulo ("NULIDAD PROCESAL DECLARADA DE OFICIO (AUTO ...)") no es
         # parte resolutiva: se descarta si el detalle empieza por él.
         inicio = re.match(r"^[^()]{0,160}\([^)]*\)\s*", cuerpo)
         resto = cuerpo[inicio.end():] if inicio and cuerpo.startswith(rotulo[:20]) else cuerpo
         if resto == rotulo:
-            resto = ""
-        if cls.PATRONES_RESOLUTIVOS[clave].search(resto):
+            return []
+        return [
+            o.strip() for o in re.split(r"[.;:]\s+|\n", resto)
+            if o.strip() and (con_peticiones or not cls.PATRON_PETICION.search(o))
+        ]
+
+    @classmethod
+    def _decision_del_auto(cls, rotulo, cuerpo, clave):
+        """Lee la parte resolutiva de un auto cuyo rótulo nombra un cierre o reactivación.
+
+        Devuelve ``"SI"`` si una oración del juez la acredita, ``"NO"`` si una
+        oración la niega y ninguna la acredita, y ``"SIN_TEXTO"`` cuando no se
+        puede decidir (historial compactado, solo trámite o señales opuestas):
+        en ese caso no se afirma nada.
+        """
+        objeto = re.compile(r"\b(?:" + cls.OBJETO_DECISION[clave] + r")")
+        afirma = niega = False
+        for oracion in cls._oraciones_resolutivas(rotulo, cuerpo, con_peticiones=True):
+            # Negar o correr traslado de lo pedido es una decisión aunque la
+            # oración nombre la petición; afirmarlo dentro de ella no lo es.
+            if objeto.search(oracion) and (
+                cls.PATRON_NEGACION_ORACION.search(oracion)
+                or cls.PATRON_TRASLADO.search(oracion)
+            ):
+                niega = True
+            elif (
+                not cls.PATRON_PETICION.search(oracion)
+                and cls.PATRONES_RESOLUTIVOS[clave].search(oracion)
+            ):
+                afirma = True
+        if afirma and not niega:
             return "SI"
+        if niega and not afirma:
+            return "NO"
         return "SIN_TEXTO"
 
     @classmethod
@@ -2202,6 +2243,13 @@ class MotorInferenciaProcesal:
                 decision = cls._decision_del_auto(rotulo, cuerpo, "REACTIVACION")
                 if decision != "NO":
                     reactivaciones.append((fecha, decision == "SI"))
+                continue
+            if re.search(cls._CONDICION_TIPO_AUTO, rotulo) and any(
+                cls.PATRON_REACTIVACION_EN_CUERPO.search(o)
+                and not cls.PATRON_NEGACION_ORACION.search(o)
+                for o in cls._oraciones_resolutivas(rotulo, cuerpo)
+            ):
+                reactivaciones.append((fecha, True))
                 continue
             condicion = next(
                 (c for c, patron in cls.PATRONES_CONDICION if patron.search(rotulo)),
@@ -2241,6 +2289,9 @@ class MotorInferenciaProcesal:
         posteriores = [confirmada for fecha, confirmada in reactivaciones if fecha > cierre["orden"]]
         if any(posteriores):
             return {}
+        # Una reactivación del mismo día no permite saber qué fue primero
+        # (SATJE no da un orden fiable dentro del día): queda para confirmar.
+        posteriores += [False for fecha, _ in reactivaciones if fecha == cierre["orden"]]
         indice_citacion = cls.obtener_indice_fase("2.1 CITACION (PERSONA/BOLETA)")
         if cierre["por_auto"] and any(
             h.get("prioridad", -1) >= indice_citacion

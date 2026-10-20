@@ -11,40 +11,69 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sqlite3
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 
 # Permite ejecutarlo como `python scripts/recalcular_condicion.py` desde la raíz.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import psycopg2
 from psycopg2.extras import Json
 
 from src.agente_extractor import MotorInferenciaProcesal
 from src.repositorio_postgres import RepositorioColaPostgres
 
 
-def _historial_guardado(conn, numero_causa: str) -> list[dict]:
+def _historial_guardado(conn, numero_causa: str, respaldo=None) -> list[dict]:
+    """Historial de PostgreSQL; el texto vaciado se completa desde el respaldo."""
     with conn.cursor() as cursor:
         cursor.execute("""
-            SELECT fecha, titulo, detalle, carpeta FROM actuaciones_procesales
+            SELECT actuacion_id, fecha, titulo, detalle, carpeta FROM actuaciones_procesales
             WHERE numero_causa = %s ORDER BY fecha, actuacion_id
         """, (numero_causa,))
-        return [
-            {"fecha": f, "titulo": t, "detalle": d or t, "ORIGEN_CARPETA": c}
-            for f, t, d, c in cursor.fetchall()
-        ]
+        filas = cursor.fetchall()
+    textos = {}
+    if respaldo is not None and filas:
+        textos = {
+            act_id: (t, d) for act_id, t, d in respaldo.execute(
+                "SELECT actuacion_id, titulo, detalle FROM actuaciones WHERE numero_causa = ?",
+                (numero_causa,),
+            )
+        }
+    historial = []
+    for act_id, fecha, titulo, detalle, carpeta in filas:
+        titulo_r, detalle_r = textos.get(act_id, ("", ""))
+        titulo = titulo or titulo_r
+        detalle = detalle or detalle_r
+        historial.append({
+            "fecha": fecha, "titulo": titulo, "detalle": detalle or titulo,
+            "ORIGEN_CARPETA": carpeta,
+        })
+    return historial
 
 
-def _condicion(conn, numero_causa: str, payload) -> dict | None:
+def _condicion(conn, numero_causa: str, payload, resumen: Counter, respaldo=None) -> dict | None:
     datos = {}
     if isinstance(payload, dict):
         datos = payload.get("datos") if isinstance(payload.get("datos"), dict) else payload
     # El historial del lote queda en datos_json solo en algunas causas; el
-    # resto se lee del historial append-only.
-    actuaciones = datos.get("HISTORIAL_ACTUACIONES") or _historial_guardado(conn, numero_causa)
+    # resto se lee del historial append-only (compactado: sin detalle).
+    actuaciones = (datos.get("HISTORIAL_ACTUACIONES")
+                   or _historial_guardado(conn, numero_causa, respaldo))
     if not actuaciones:
         return None
+    # Cobertura: cuánto texto hay para decidir, no solo el rótulo.
+    if any(str(a.get("detalle") or "").strip() not in ("", str(a.get("titulo") or "").strip())
+           for a in actuaciones):
+        resumen["con_texto_resolutivo"] += 1
+    else:
+        resumen["solo_rotulos"] += 1
+    if any(not str(a.get("titulo") or "").strip() and not str(a.get("detalle") or "").strip()
+           for a in actuaciones):
+        resumen["con_filas_vacias"] += 1
     resultado = MotorInferenciaProcesal.inferir_estado_procesal(
         actuaciones, causa=numero_causa
     )
@@ -57,14 +86,73 @@ def _condicion(conn, numero_causa: str, payload) -> dict | None:
     }
 
 
-def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0) -> dict:
+def _procesar_lote(repo, aplicar, columna, desde, tamano, resumen, respaldo=None) -> str | None:
+    """Procesa hasta `tamano` causas tras `desde` en una conexión propia.
+
+    Devuelve la última causa vista, o None si no quedan. Una conexión por
+    lote: un corte de red o una suspensión del equipo solo repite ese lote.
+    """
+    conn = repo._get_connection()
+    try:
+        if not aplicar:
+            conn.set_session(readonly=True)
+        with conn.cursor() as cursor:
+            cursor.execute(f"""
+                SELECT numero_causa, datos_json, {columna} FROM expedientes
+                WHERE numero_causa > %s ORDER BY numero_causa LIMIT %s
+            """, (desde, tamano))
+            filas = cursor.fetchall()
+        if not filas:
+            return None
+        parcial = Counter()
+        for numero_causa, payload, condicion_actual in filas:
+            parcial["vistas"] += 1
+            nueva = _condicion(conn, numero_causa, payload, parcial, respaldo)
+            if nueva is None:
+                parcial["sin_historial"] += 1
+                continue
+            parcial[nueva["CONDICION"]] += 1
+            if nueva["CONDICION"] == condicion_actual:
+                continue
+            parcial["cambian"] += 1
+            if not aplicar:
+                continue
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE expedientes SET
+                        condicion = %s, fecha_condicion = %s, actuacion_condicion = %s,
+                        datos_json = CASE
+                            WHEN jsonb_typeof(datos_json -> 'datos') = 'object'
+                            THEN jsonb_set(datos_json, '{datos}', (datos_json -> 'datos') || %s)
+                            ELSE datos_json
+                        END
+                    WHERE numero_causa = %s
+                """, (
+                    nueva["CONDICION"],
+                    str(nueva["FECHA CONDICION"]) if nueva["FECHA CONDICION"] else None,
+                    nueva["ACTUACION CONDICION"],
+                    Json(nueva), numero_causa,
+                ))
+        if aplicar:
+            conn.commit()
+        # Solo se suma al resumen cuando el lote terminó (y se confirmó).
+        resumen.update(parcial)
+        return filas[-1][0]
+    finally:
+        conn.close()
+
+
+def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0,
+               desde: str = "", intentos: int = 5, ruta_respaldo: Path | None = None) -> dict:
     config = json.loads(config_path.read_text(encoding="utf-8-sig"))
+    # Solo lectura: el índice nunca se modifica desde aquí.
+    respaldo = (
+        sqlite3.connect(f"file:{ruta_respaldo.as_posix()}?mode=ro", uri=True)
+        if ruta_respaldo else None
+    )
     repo = RepositorioColaPostgres.desde_config(config.get("base_de_datos"))
     resumen = Counter()
     conn = repo._get_connection()
-    if not aplicar:
-        conn.set_session(readonly=True)
-    ultima_causa = ""
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
@@ -72,54 +160,34 @@ def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0) -> dic
                 WHERE table_name = 'expedientes' AND column_name = 'condicion'
             """)
             con_columna = cursor.fetchone() is not None
-        if aplicar and not con_columna:
-            raise RuntimeError("FALTA_MIGRACION_005_CONDICION")
-        # En seco y antes de la migración, todas cuentan como VIGENTE.
-        columna = "condicion" if con_columna else "'VIGENTE'"
-        while True:
-            with conn.cursor() as cursor:
-                cursor.execute(f"""
-                    SELECT numero_causa, datos_json, {columna} FROM expedientes
-                    WHERE numero_causa > %s ORDER BY numero_causa LIMIT %s
-                """, (ultima_causa, min(50, limite - resumen["vistas"]) if limite else 50))
-                filas = cursor.fetchall()
-            if not filas:
-                break
-            for numero_causa, payload, condicion_actual in filas:
-                ultima_causa = numero_causa
-                resumen["vistas"] += 1
-                nueva = _condicion(conn, numero_causa, payload)
-                if nueva is None:
-                    resumen["sin_historial"] += 1
-                    continue
-                resumen[nueva["CONDICION"]] += 1
-                if nueva["CONDICION"] == condicion_actual:
-                    continue
-                resumen["cambian"] += 1
-                if not aplicar:
-                    continue
-                with conn.cursor() as cursor:
-                    cursor.execute("""
-                        UPDATE expedientes SET
-                            condicion = %s, fecha_condicion = %s, actuacion_condicion = %s,
-                            datos_json = CASE
-                                WHEN jsonb_typeof(datos_json -> 'datos') = 'object'
-                                THEN jsonb_set(datos_json, '{datos}', (datos_json -> 'datos') || %s)
-                                ELSE datos_json
-                            END
-                        WHERE numero_causa = %s
-                    """, (
-                        nueva["CONDICION"],
-                        str(nueva["FECHA CONDICION"]) if nueva["FECHA CONDICION"] else None,
-                        nueva["ACTUACION CONDICION"],
-                        Json(nueva), numero_causa,
-                    ))
-            if aplicar:
-                conn.commit()
-            if limite and resumen["vistas"] >= limite:
-                break
     finally:
         conn.close()
+    if aplicar and not con_columna:
+        raise RuntimeError("FALTA_MIGRACION_005_CONDICION")
+    # En seco y antes de la migración, todas cuentan como VIGENTE.
+    columna = "condicion" if con_columna else "'VIGENTE'"
+    ultima_causa = desde
+    fallos = 0
+    while not (limite and resumen["vistas"] >= limite):
+        tamano = min(50, limite - resumen["vistas"]) if limite else 50
+        try:
+            siguiente = _procesar_lote(
+                repo, aplicar, columna, ultima_causa, tamano, resumen, respaldo
+            )
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            fallos += 1
+            if fallos > intentos:
+                print(f"Interrumpido tras {ultima_causa!r}; reanudar con --desde", file=sys.stderr)
+                raise
+            time.sleep(min(60, 5 * fallos))
+            continue
+        fallos = 0
+        if siguiente is None:
+            break
+        ultima_causa = siguiente
+        print(f"... {resumen['vistas']} causas (hasta {ultima_causa})", file=sys.stderr, flush=True)
+    if respaldo is not None:
+        respaldo.close()
     return dict(resumen)
 
 
@@ -130,9 +198,16 @@ def main() -> None:
                         help="Escribe los cambios; sin esta opción solo informa")
     parser.add_argument("--limite", type=int, default=0,
                         help="Máximo de causas a revisar; 0 revisa todas")
+    parser.add_argument("--desde", default="",
+                        help="Reanuda después de este número de causa")
+    parser.add_argument("--respaldo", type=Path,
+                        help="indice_actuaciones.sqlite (scripts/indexar_respaldo_historico.py) "
+                             "para leer el texto que la compactación vació")
     args = parser.parse_args()
     logging.disable(logging.WARNING)
-    print(json.dumps(recalcular(args.config, args.aplicar, args.limite), ensure_ascii=False))
+    print(json.dumps(recalcular(args.config, args.aplicar, args.limite, args.desde,
+                                ruta_respaldo=args.respaldo),
+                     ensure_ascii=False))
 
 
 if __name__ == "__main__":
