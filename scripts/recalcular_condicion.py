@@ -27,14 +27,23 @@ from src.agente_extractor import MotorInferenciaProcesal
 from src.repositorio_postgres import RepositorioColaPostgres
 
 
-def _historial_guardado(conn, numero_causa: str, respaldo=None, resumen=None) -> list[dict]:
-    """Historial de PostgreSQL; el texto vaciado se completa desde el respaldo."""
+def _historiales_del_lote(conn, causas: list[str]) -> dict[str, list[tuple]]:
+    """Actuaciones de PostgreSQL de varias causas en una sola consulta."""
+    por_causa: dict[str, list[tuple]] = {c: [] for c in causas}
     with conn.cursor() as cursor:
         cursor.execute("""
-            SELECT actuacion_id, fecha, titulo, detalle, carpeta FROM actuaciones_procesales
-            WHERE numero_causa = %s ORDER BY fecha, actuacion_id
-        """, (numero_causa,))
-        filas = cursor.fetchall()
+            SELECT numero_causa, actuacion_id, fecha, titulo, detalle, carpeta
+            FROM actuaciones_procesales
+            WHERE numero_causa = ANY(%s) ORDER BY numero_causa, fecha, actuacion_id
+        """, (causas,))
+        for numero_causa, *fila in cursor.fetchall():
+            por_causa[numero_causa].append(tuple(fila))
+    return por_causa
+
+
+def _historial_guardado(filas: list[tuple], numero_causa: str, respaldo=None,
+                        resumen=None) -> list[dict]:
+    """Historial de PostgreSQL; el texto vaciado se completa desde el respaldo."""
     textos = {}
     if respaldo is not None and filas:
         textos = {
@@ -60,14 +69,15 @@ def _historial_guardado(conn, numero_causa: str, respaldo=None, resumen=None) ->
     return historial
 
 
-def _condicion(conn, numero_causa: str, payload, resumen: Counter, respaldo=None) -> dict | None:
+def _condicion(filas_pg: list[tuple], numero_causa: str, payload, resumen: Counter,
+               respaldo=None) -> dict | None:
     datos = {}
     if isinstance(payload, dict):
         datos = payload.get("datos") if isinstance(payload.get("datos"), dict) else payload
     # El historial del lote queda en datos_json solo en algunas causas; el
     # resto se lee del historial append-only (compactado: sin detalle).
     actuaciones = (datos.get("HISTORIAL_ACTUACIONES")
-                   or _historial_guardado(conn, numero_causa, respaldo, resumen))
+                   or _historial_guardado(filas_pg, numero_causa, respaldo, resumen))
     if not actuaciones:
         return None
     # Cobertura: alguna actuación trae detalle además del rótulo. No acredita
@@ -111,9 +121,10 @@ def _procesar_lote(repo, aplicar, columna, desde, tamano, resumen, respaldo=None
         if not filas:
             return None
         parcial = Counter()
+        historiales = _historiales_del_lote(conn, [f[0] for f in filas])
         for numero_causa, payload, condicion_actual, version in filas:
             parcial["vistas"] += 1
-            nueva = _condicion(conn, numero_causa, payload, parcial, respaldo)
+            nueva = _condicion(historiales[numero_causa], numero_causa, payload, parcial, respaldo)
             if nueva is None:
                 parcial["sin_historial"] += 1
                 continue
