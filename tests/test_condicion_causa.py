@@ -234,6 +234,36 @@ class TestCondicionCausa(unittest.TestCase):
         ])
         self.assertEqual(r.get("CONDICION"), "POR_CONFIRMAR")
 
+    def test_revocacion_negada_no_reactiva(self):
+        for cuerpo in ("NO SE DEJA SIN EFECTO EL ABANDONO", "NO SE REVOCA EL AUTO DE ABANDONO"):
+            r = inferir(BASE + [
+                {"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO INTERLOCUTORIO)",
+                 "detalle": "SE DECLARA EL ABANDONO DEL PROCESO"},
+                {"fecha": "20/10/2025", "titulo": "DEJA SIN EFECTO EL AUTO DE ABANDONO (AUTO INTERLOCUTORIO)",
+                 "detalle": cuerpo},
+            ])
+            self.assertEqual(r.get("CONDICION"), "ABANDONADA", cuerpo)
+
+    def test_adversativa_conserva_el_cierre(self):
+        r = inferir(BASE + [{"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)",
+                             "detalle": "SE DECLARA EL ABANDONO, PERO SE NIEGA EL PEDIDO DE COSTAS"}])
+        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
+
+    def test_razon_del_dia_siguiente_no_degrada_el_cierre(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO INTERLOCUTORIO)",
+             "detalle": "SE DECLARA EL ABANDONO DEL PROCESO"},
+            {"fecha": "06/09/2025", "titulo": "ABANDONO (RAZON DE NOTIFICACION)",
+             "detalle": "RAZON DE NOTIFICACION DE AUTO DE ABANDONO"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
+        self.assertEqual(r.get("FECHA_CONDICION"), "05/09/2025")
+
+    def test_solo_razon_de_abandono_queda_por_confirmar(self):
+        r = inferir(BASE + [{"fecha": "06/09/2025", "titulo": "ABANDONO (RAZON DE NOTIFICACION)",
+                             "detalle": "RAZON DE NOTIFICACION DE AUTO DE ABANDONO"}])
+        self.assertEqual(r.get("CONDICION"), "POR_CONFIRMAR")
+
     def test_decision_mixta_en_una_oracion_conserva_el_cierre(self):
         r = inferir(BASE + [{"fecha": "05/09/2025", "titulo": "ABANDONO (AUTO RESOLUTIVO)",
                              "detalle": "SE DECLARA EL ABANDONO DEL PROCESO Y SE NIEGA EL PEDIDO DE COSTAS"}])

@@ -2119,6 +2119,8 @@ class MotorInferenciaProcesal:
         r"|NULIDAD DE REMATE|ACEPTAR REVOCATORIA|(?:SE\s+)?DEJA(?:R)? SIN EFECTO"
         r"|REVOCA\w*)\b" + _CONDICION_TIPO_AUTO
     )
+    # Rótulos que dan cuenta de un auto sin decidir ("ABANDONO (RAZON DE NOTIFICACION)").
+    PATRON_RAZON = re.compile(r"\(\s*(?:RAZON|CONSTANCIA|NOTIFICACION|OFICIO)\b")
     # La parte resolutiva se lee oración por oración. Las oraciones que narran
     # una petición o un trámite no deciden nada.
     PATRON_PETICION = re.compile(
@@ -2128,7 +2130,8 @@ class MotorInferenciaProcesal:
     PATRON_TRASLADO = re.compile(r"\b(?:CORRE\w* TRASLADO|CORRASE TRASLADO|TRASLADO A LA CONTRAPARTE)\b")
     PATRON_NEGACION_ORACION = re.compile(
         r"\b(?:NIEGA\w*|NIEGUESE|RECHAZA\w*|RECHACESE|DESECHA\w*|NO HA LUGAR|NO PROCEDE"
-        r"|NO SE ACEPTA|NO ACEPTA|INADMITE\w*|NO SE DECLARA|IMPROCEDENTE)\b"
+        r"|NO SE ACEPTA|NO ACEPTA|INADMITE\w*|NO SE DECLARA|IMPROCEDENTE"
+        r"|NO (?:SE )?(?:DEJA\w*|REVOCA\w*|REVOCO|ARCHIVA\w*|APRUEBA\w*|HOMOLOGA\w*))\b"
     )
     # Objeto de cada decisión: la negación solo cuenta si recae sobre él.
     OBJETO_DECISION = {
@@ -2186,7 +2189,8 @@ class MotorInferenciaProcesal:
             return []
         return [
             o.strip() for o in re.split(
-                r"[.;:]\s+|\n|,?\s+(?:Y|E|ASIMISMO|ADEMAS)\s+(?=(?:SE|NO|DECLAR|NIEG|RECHAZ|ARCHIV|ORDEN|DISPON)\w*\b)"
+                r"[.;:]\s+|\n|,?\s+(?:Y|E|ASIMISMO|ADEMAS|PERO|EMPERO|SIN EMBARGO|MAS)\s+"
+                r"(?=(?:SE|NO|DECLAR|NIEG|RECHAZ|ARCHIV|ORDEN|DISPON)\w*\b)"
                 r"|,\s+(?=(?:SE|NO)\b)",
                 resto,
             )
@@ -2248,8 +2252,14 @@ class MotorInferenciaProcesal:
             if not rotulo:
                 continue
             cuerpo = re.sub(r"\s+", " ", normalizar_texto(act.get("detalle", ""))).strip()
+            # Una razón de notificación o constancia da cuenta de un auto, no
+            # decide: solo cuenta si su texto trae la decisión o si el auto no
+            # quedó en el historial (cierre por confirmar).
+            es_razon = bool(cls.PATRON_RAZON.search(rotulo))
             if cls.PATRON_REACTIVACION.search(rotulo):
                 decision = cls._decision_del_auto(rotulo, cuerpo, "REACTIVACION")
+                if decision == "SIN_TEXTO" and es_razon:
+                    continue
                 if decision != "NO":
                     reactivaciones.append((fecha, decision == "SI"))
                 continue
@@ -2270,6 +2280,8 @@ class MotorInferenciaProcesal:
             if decision == "NO":
                 continue
             confirmado = decision == "SI"
+            if es_razon and not confirmado and cierre is not None:
+                continue
             # La razón de notificación del mismo día no desplaza al auto leído.
             if (
                 cierre is None or fecha > cierre["orden"]
