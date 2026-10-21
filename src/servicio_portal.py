@@ -525,16 +525,33 @@ class ServicioPortal:
         return estado, mensaje, str(ejecucion_id) if ejecucion_id else None
 
     def _subir_resultado(self, solicitud: Solicitud, lote: Path) -> tuple[str | None, str | None]:
-        excel = lote / "reporte_final.xlsx"
-        if not excel.is_file():
+        """Publica el Excel del lote (solo las causas corridas) y el reporte completo.
+
+        ``resultados/<id>.xlsx`` lleva las causas de esta ejecución; si no se
+        pudo generar, se usa el reporte completo. ``resultados/<id>_completo.xlsx``
+        lleva todas las causas del archivo.
+        """
+        completo = lote / "reporte_final.xlsx"
+        del_lote = lote / "reporte_lote.xlsx"
+        principal = del_lote if del_lote.is_file() else completo
+        if not principal.is_file():
             return None, None
+        if principal is completo:
+            logger.warning("[PORTAL] %s sin Excel del lote; se publica el reporte completo.", solicitud.id)
         prefijo = PREFIJO_B2 if solicitud.archivo_ruta.startswith(PREFIJO_B2) else ""
         ruta = "%sresultados/%s.xlsx" % (prefijo, solicitud.id)
         try:
-            self.storage.subir(ruta, excel.read_bytes())
+            self.storage.subir(ruta, principal.read_bytes())
         except Exception as exc:
             logger.exception("[PORTAL] No se pudo subir el resultado de %s.", solicitud.id)
             return None, codigo_publico(exc, "STORAGE_NO_DISPONIBLE")
+        if completo.is_file():
+            try:
+                self.storage.subir("%sresultados/%s_completo.xlsx" % (prefijo, solicitud.id),
+                                   completo.read_bytes())
+            except Exception:
+                # El principal ya quedó publicado; el completo es un extra.
+                logger.exception("[PORTAL] No se pudo subir el reporte completo de %s.", solicitud.id)
         return ruta, None
 
     def ejecutar(self, *, una_vez: bool = False, detener: threading.Event | None = None) -> None:

@@ -433,6 +433,33 @@ class FrenoNavegacionTests(unittest.TestCase):
             exportado.loc[0, "FECHA INICIO FASE ACTUAL"], "05/07/2017"
         )
 
+    def test_excel_del_lote_trae_solo_sus_causas_y_conserva_el_completo(self):
+        gestor = GestorCasos.__new__(GestorCasos)
+        gestor.df = pd.DataFrame({
+            "NUMERO_JUICIO": ["17230-2019-00001", "17230-2019-00002", "17230-2019-00003"],
+            "COMENTARIO_ULTIMO": ["", "", ""],
+            "FECHA FIN ULTIMA FASE": ["01/01/2026", "02/01/2026", "03/01/2026"],
+            "FECHA INICIO FASE ACTUAL": ["01/01/2026", "02/01/2026", "03/01/2026"],
+        })
+        gestor.hoja = "migrado"
+
+        with tempfile.TemporaryDirectory() as temporal:
+            gestor.ruta_final = os.path.join(temporal, "reporte_final.xlsx")
+            gestor.exportar_excel()
+            ruta_lote = os.path.join(temporal, "reporte_lote.xlsx")
+            # Las causas pueden llegar sin guiones desde la cola.
+            gestor.exportar_excel(causas=["17230201900002", "17230-2019-00003"], ruta=ruta_lote)
+
+            def leer(ruta, hoja):
+                return pd.read_excel(ruta, sheet_name=hoja, dtype=str, header=(
+                    GestorCasos.FILA_ENCABEZADO_REPORTE - 1 if hoja == "Reporte" else 0))
+
+            self.assertEqual(gestor.ruta_final, os.path.join(temporal, "reporte_final.xlsx"))
+            self.assertEqual(len(leer(gestor.ruta_final, "Reporte")), 3)
+            lote = leer(ruta_lote, "Reporte")
+            self.assertEqual(lote["NUMERO_JUICIO"].tolist(), ["17230-2019-00002", "17230-2019-00003"])
+            self.assertEqual(len(leer(ruta_lote, "PARA CARGA")), 2)
+
     def test_exportacion_acorta_etiquetas_de_citacion_y_congelamiento(self):
         gestor = GestorCasos.__new__(GestorCasos)
         gestor.df = pd.DataFrame({
