@@ -497,6 +497,11 @@ class GestorCasos:
             df_export = df_export.loc[numeros.isin(objetivos)].copy()
         if getattr(self, 'filtros', None):
             objetivos = self._causas_hoja_seleccion()
+            if objetivos is not None and causas is not None:
+                pedidas = {str(c).replace('-', '').strip() for c in causas if str(c).strip()}
+                if not pedidas.issubset(objetivos):
+                    raise ValueError('EXPORTACION_CAUSAS_FUERA_DE_SELECCION')
+                objetivos = pedidas
             if objetivos is not None:
                 numeros = df_export['NUMERO_JUICIO'].astype(str).str.replace(
                     '-', '', regex=False,
@@ -976,6 +981,18 @@ class GestorCasos:
                         reporte, hitos, revisiones = preparar_vistas_ia(ruta_db, reporte)
             except Exception as exc:
                 logger.warning('No se pudieron preparar las vistas IA: %s', type(exc).__name__)
+        if causas is not None and hitos is not None:
+            # Las vistas de IA se consultan para toda la base; el Excel del
+            # lote no debe mostrar causas ajenas.
+            del_reporte = set(
+                reporte['NUMERO_JUICIO'].astype(str).str.replace('-', '', regex=False).str.strip()
+            )
+
+            def _solo_lote(tabla):
+                numeros = tabla['NUMERO_JUICIO'].astype(str).str.replace('-', '', regex=False).str.strip()
+                return tabla.loc[numeros.isin(del_reporte)].copy()
+
+            hitos, revisiones = _solo_lote(hitos), _solo_lote(revisiones)
         ruta_objetivo = os.path.abspath(ruta or self.ruta_final)
         directorio = os.path.dirname(ruta_objetivo) or os.getcwd()
         os.makedirs(directorio, exist_ok=True)

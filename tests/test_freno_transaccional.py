@@ -460,6 +460,39 @@ class FrenoNavegacionTests(unittest.TestCase):
             self.assertEqual(lote["NUMERO_JUICIO"].tolist(), ["17230-2019-00002", "17230-2019-00003"])
             self.assertEqual(len(leer(ruta_lote, "PARA CARGA")), 2)
 
+    def test_excel_del_lote_filtra_hojas_de_ia_y_admite_subconjunto_de_seleccion(self):
+        gestor = GestorCasos.__new__(GestorCasos)
+        gestor.df = pd.DataFrame({
+            "NUMERO_JUICIO": ["17230-2019-00001", "17230-2019-00002"],
+            "COMENTARIO_ULTIMO": ["", ""],
+            "FECHA FIN ULTIMA FASE": ["01/01/2026", "02/01/2026"],
+            "FECHA INICIO FASE ACTUAL": ["01/01/2026", "02/01/2026"],
+        })
+        gestor.hoja = "migrado"
+        gestor.config = {"inferencia_ia": {"modo": "sombra"}, "base_de_datos": {"motor": "postgres"}}
+        gestor.filtros = {"hoja_seleccion_causas": "SELECCION"}
+
+        def vistas(config, reporte):
+            hitos = pd.DataFrame({"NUMERO_JUICIO": ["17230-2019-00001", "17230-2019-00002"],
+                                  "eta_id": [1, 2]})
+            revisiones = pd.DataFrame({"NUMERO_JUICIO": ["17230-2019-00002", "17230-2019-00001"],
+                                       "ESTADO": ["A", "B"]})
+            return reporte, hitos, revisiones
+
+        with tempfile.TemporaryDirectory() as temporal, \
+                patch("src.gestor_casos.preparar_vistas_ia_postgres", side_effect=vistas), \
+                patch.object(GestorCasos, "_causas_hoja_seleccion",
+                             return_value={"17230201900001", "17230201900002"}):
+            gestor.ruta_final = os.path.join(temporal, "reporte_final.xlsx")
+            ruta = os.path.join(temporal, "reporte_lote.xlsx")
+            gestor.exportar_excel(causas=["17230-2019-00001"], ruta=ruta)
+            hitos = pd.read_excel(ruta, sheet_name="HISTORIAL HITOS", dtype=str)
+            revisiones = pd.read_excel(ruta, sheet_name="REVISION IA", dtype=str)
+            with self.assertRaisesRegex(ValueError, "FUERA_DE_SELECCION"):
+                gestor.exportar_excel(causas=["17230-2019-00099"], ruta=ruta)
+        self.assertEqual(hitos["NUMERO_JUICIO"].tolist(), ["17230-2019-00001"])
+        self.assertEqual(revisiones["NUMERO_JUICIO"].tolist(), ["17230-2019-00001"])
+
     def test_exportacion_acorta_etiquetas_de_citacion_y_congelamiento(self):
         gestor = GestorCasos.__new__(GestorCasos)
         gestor.df = pd.DataFrame({
