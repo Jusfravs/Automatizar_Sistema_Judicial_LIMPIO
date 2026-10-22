@@ -53,6 +53,7 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
   const [cancelando, setCancelando] = useState(false)
   const [cancelError, setCancelError] = useState('')
   const [descargando, setDescargando] = useState(false)
+  const [descargandoCompleto, setDescargandoCompleto] = useState(false)
   const [downloadError, setDownloadError] = useState('')
   const [refreshError, setRefreshError] = useState(false)
   const [actualizando, setActualizando] = useState(false)
@@ -194,13 +195,18 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
     setConfirmando(false)
   }
 
-  async function handleDescargar() {
+  async function handleDescargar(completo = false) {
     if (!actual.resultado_ruta) return
-    setDescargando(true)
+    const setCargando = completo ? setDescargandoCompleto : setDescargando
+    setCargando(true)
     setDownloadError('')
     if (actual.resultado_ruta.startsWith('b2:')) {
       try {
-        const respuesta = await fetch(`/api/lotes/archivo?id=${encodeURIComponent(actual.id)}`)
+        const respuesta = await fetch(`/api/lotes/archivo?id=${encodeURIComponent(actual.id)}${completo ? '&tipo=completo' : ''}`)
+        if (respuesta.status === 404 && completo) {
+          setDownloadError('Este lote no tiene el reporte con todas las causas.')
+          return
+        }
         if (!respuesta.ok) throw new Error(`B2_DESCARGA_HTTP_${respuesta.status}`)
         const { url } = await respuesta.json() as { url: string }
         if (!url) throw new Error('B2_ENLACE_INVALIDO')
@@ -208,12 +214,12 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
       } catch {
         setDownloadError('No se pudo generar el enlace de descarga. Intenta de nuevo.')
       } finally {
-        setDescargando(false)
+        setCargando(false)
       }
       return
     }
     const { data, error } = await supabase.storage.from('lotes').createSignedUrl(actual.resultado_ruta, 60)
-    setDescargando(false)
+    setCargando(false)
     if (error) {
       console.error('No se pudo generar el enlace de descarga:', error.message)
       setDownloadError('No se pudo generar el enlace de descarga. Intenta de nuevo.')
@@ -228,8 +234,13 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
   const acciones = (
     <>
       {actual.resultado_ruta && (
-        <Button onClick={handleDescargar} cargando={descargando}>
+        <Button onClick={() => handleDescargar()} cargando={descargando}>
           {descargando ? 'Generando enlace…' : 'Descargar resultado'}
+        </Button>
+      )}
+      {actual.resultado_ruta?.startsWith('b2:') && actual.modo !== 'pendientes' && (
+        <Button variante="secundario" onClick={() => handleDescargar(true)} cargando={descargandoCompleto}>
+          {descargandoCompleto ? 'Generando enlace…' : 'Descargar todas, incluidas las corridas'}
         </Button>
       )}
       {puedeCancelar && (
