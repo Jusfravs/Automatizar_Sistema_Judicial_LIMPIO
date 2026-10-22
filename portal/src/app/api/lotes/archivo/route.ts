@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, GetObjectCommand, ListObjectVersionsCommand, PutObjectCommand } from '@aws-sdk/client-s3'
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectVersionsCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { NextRequest, NextResponse } from 'next/server'
 import { b2Config, B2_PREFIX, UUID_RE } from '@/lib/b2'
@@ -52,15 +52,32 @@ export async function GET(request: NextRequest) {
   if (!user) return respuestaError(401, 'SESION_REQUERIDA')
   const id = request.nextUrl.searchParams.get('id')
   if (!id || !UUID_RE.test(id)) return respuestaError(400, 'SOLICITUD_INVALIDA')
+  const completo = request.nextUrl.searchParams.get('tipo') === 'completo'
   const { data, error } = await supabase.from('solicitudes_lote')
-    .select('resultado_ruta').eq('id', id).single()
-  if (error || data?.resultado_ruta !== `${B2_PREFIX}resultados/${id}.xlsx`) {
+    .select('resultado_ruta, archivo_ruta, modo').eq('id', id).single()
+  const principal = `${B2_PREFIX}resultados/${id}.xlsx`
+  // El reporte completo puede existir sin principal (EXCEL_LOTE_NO_DISPONIBLE): basta un lote de B2
+  // en «solo» o «lote»; en «pendientes» el principal ya es el completo.
+  const disponible = completo
+    ? data?.modo !== 'pendientes' && (data?.resultado_ruta === principal || !!data?.archivo_ruta.startsWith(B2_PREFIX))
+    : data?.resultado_ruta === principal
+  if (error || !data || !disponible) {
     return respuestaError(404, 'RESULTADO_NO_DISPONIBLE')
   }
   try {
     const { client, bucket } = b2Config()
+    // El reporte completo (todas las causas del archivo) se publica aparte y es opcional.
+    const key = completo ? `resultados/${id}_completo.xlsx` : principal.slice(B2_PREFIX.length)
+    if (completo) {
+      try {
+        await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+      } catch (exc) {
+        const estado = (exc as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode
+        return estado === 404 ? respuestaError(404, 'COMPLETO_NO_DISPONIBLE') : respuestaError(503, 'B2_NO_DISPONIBLE')
+      }
+    }
     const url = await getSignedUrl(client, new GetObjectCommand({
-      Bucket: bucket, Key: data.resultado_ruta.slice(B2_PREFIX.length),
+      Bucket: bucket, Key: key,
     }), { expiresIn: 60 })
     return NextResponse.json({ url }, { headers: { 'Cache-Control': 'no-store' } })
   } catch {

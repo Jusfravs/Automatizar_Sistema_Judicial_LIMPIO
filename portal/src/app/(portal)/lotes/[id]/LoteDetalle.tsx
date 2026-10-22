@@ -53,6 +53,7 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
   const [cancelando, setCancelando] = useState(false)
   const [cancelError, setCancelError] = useState('')
   const [descargando, setDescargando] = useState(false)
+  const [descargandoCompleto, setDescargandoCompleto] = useState(false)
   const [downloadError, setDownloadError] = useState('')
   const [refreshError, setRefreshError] = useState(false)
   const [actualizando, setActualizando] = useState(false)
@@ -194,13 +195,21 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
     setConfirmando(false)
   }
 
-  async function handleDescargar() {
-    if (!actual.resultado_ruta) return
-    setDescargando(true)
+  async function handleDescargar(completo = false) {
+    if (!actual.resultado_ruta && !completo) return
+    const setCargando = completo ? setDescargandoCompleto : setDescargando
+    setCargando(true)
     setDownloadError('')
-    if (actual.resultado_ruta.startsWith('b2:')) {
+    if (completo || actual.resultado_ruta?.startsWith('b2:')) {
       try {
-        const respuesta = await fetch(`/api/lotes/archivo?id=${encodeURIComponent(actual.id)}`)
+        const respuesta = await fetch(`/api/lotes/archivo?id=${encodeURIComponent(actual.id)}${completo ? '&tipo=completo' : ''}`)
+        if (respuesta.status === 404 && completo) {
+          const { error } = await respuesta.json().catch(() => ({})) as { error?: string }
+          if (error === 'COMPLETO_NO_DISPONIBLE') {
+            setDownloadError('Este lote no tiene el reporte con todas las causas.')
+            return
+          }
+        }
         if (!respuesta.ok) throw new Error(`B2_DESCARGA_HTTP_${respuesta.status}`)
         const { url } = await respuesta.json() as { url: string }
         if (!url) throw new Error('B2_ENLACE_INVALIDO')
@@ -208,12 +217,13 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
       } catch {
         setDownloadError('No se pudo generar el enlace de descarga. Intenta de nuevo.')
       } finally {
-        setDescargando(false)
+        setCargando(false)
       }
       return
     }
+    if (!actual.resultado_ruta) return
     const { data, error } = await supabase.storage.from('lotes').createSignedUrl(actual.resultado_ruta, 60)
-    setDescargando(false)
+    setCargando(false)
     if (error) {
       console.error('No se pudo generar el enlace de descarga:', error.message)
       setDownloadError('No se pudo generar el enlace de descarga. Intenta de nuevo.')
@@ -223,13 +233,21 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
   }
 
   const puedeCancelar = esActivo && !actual.cancelar && puedeGestionar
+  // El completo se publica en B2 junto al principal, o solo él si falló el Excel del lote.
+  const tieneCompleto = actual.modo !== 'pendientes' &&
+    (!!actual.resultado_ruta?.startsWith('b2:') || !!actual.mensaje?.includes('EXCEL_LOTE_NO_DISPONIBLE'))
   const fallido = ESTADOS_FALLIDOS.includes(actual.estado)
 
   const acciones = (
     <>
       {actual.resultado_ruta && (
-        <Button onClick={handleDescargar} cargando={descargando}>
+        <Button onClick={() => handleDescargar()} cargando={descargando}>
           {descargando ? 'Generando enlace…' : 'Descargar resultado'}
+        </Button>
+      )}
+      {tieneCompleto && (
+        <Button variante="secundario" onClick={() => handleDescargar(true)} cargando={descargandoCompleto}>
+          {descargandoCompleto ? 'Generando enlace…' : 'Descargar todas, incluidas las corridas'}
         </Button>
       )}
       {puedeCancelar && (
@@ -246,7 +264,7 @@ export default function LoteDetalle({ solicitud, estadoEjecucion, colaErrores, a
         titulo={actual.archivo_nombre}
         descripcion={`Lote ${actual.id.slice(0, 8)} · creado el ${formatFecha(actual.creado_en)}`}
         migas={[{ etiqueta: 'Lotes', href: '/lotes' }, { etiqueta: actual.archivo_nombre }]}
-        acciones={actual.resultado_ruta || puedeCancelar ? acciones : undefined}
+        acciones={actual.resultado_ruta || tieneCompleto || puedeCancelar ? acciones : undefined}
       />
 
       {/* .despliegue solo tras hidratar: los avisos que ya estaban al cargar no se animan. */}
