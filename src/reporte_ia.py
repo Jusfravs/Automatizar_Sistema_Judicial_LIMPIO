@@ -137,20 +137,31 @@ def preparar_vistas_ia_postgres(config: dict, reporte: pd.DataFrame):
     """Construye las mismas vistas desde la fuente concurrente PostgreSQL."""
     from src.repositorio_postgres import RepositorioColaPostgres
 
-    repo = RepositorioColaPostgres.desde_config(config.get("base_de_datos"))
     reporte = reporte.copy()
     reporte["ESTADO AUDITORIA IA"] = "PENDIENTE"
     reporte["FUENTE DECISION"] = "REGLAS"
     reporte["CONFIANZA IA"] = pd.Series([None] * len(reporte),
                                          index=reporte.index, dtype=object)
     reporte["REVISION PENDIENTE"] = "NO"
+    hitos = pd.DataFrame(columns=COLUMNAS_HITOS)
+    revisiones = pd.DataFrame(columns=COLUMNAS_REVISION)
+    causas = list(dict.fromkeys(
+        str(causa).strip() for causa in reporte.get("NUMERO_JUICIO", [])
+        if pd.notna(causa) and str(causa).strip()
+    ))
+    if not causas:
+        return reporte, hitos, revisiones
+
+    repo = RepositorioColaPostgres.desde_config(config.get("base_de_datos"))
     with repo._connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT DISTINCT ON (numero_causa)
                     id, numero_causa, estado, decision_json
-                FROM auditorias_ia ORDER BY numero_causa, id DESC
-            """)
+                FROM auditorias_ia
+                WHERE numero_causa = ANY(%s)
+                ORDER BY numero_causa, id DESC
+            """, (causas,))
             ultimas = {fila[1]: fila for fila in cursor.fetchall()
                        if _auditoria_vigente(_leer_json(fila[3]))}
             cursor.execute("""
@@ -159,8 +170,9 @@ def preparar_vistas_ia_postgres(config: dict, reporte: pd.DataFrame):
                 FROM hitos_procesales h
                 LEFT JOIN actuaciones_procesales a
                   ON a.actuacion_id = h.actuacion_id
+                WHERE h.numero_causa = ANY(%s)
                 ORDER BY h.numero_causa, a.fecha, h.id
-            """)
+            """, (causas,))
             hitos = pd.DataFrame(
                 [fila for fila in cursor.fetchall() if _hito_vigente(fila[8])],
                 columns=COLUMNAS_HITOS,
@@ -176,8 +188,9 @@ def preparar_vistas_ia_postgres(config: dict, reporte: pd.DataFrame):
                     WHERE e2.numero_causa = r.numero_causa
                     ORDER BY e2.id DESC LIMIT 1
                 ) e ON TRUE
+                WHERE r.numero_causa = ANY(%s)
                 ORDER BY r.id
-            """)
+            """, (causas,))
             filas_revision = []
             for fila in cursor.fetchall():
                 auditoria_id, causa, estado, decision_json, estado_json, \
