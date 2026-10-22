@@ -835,14 +835,17 @@ class GestorCasos:
                 if contenido_largo:
                     ws.row_dimensions[row_idx].height = 32
 
-            referencia = f'A{fila_encabezado}:{letra_final}{ultima_fila}'
-            tabla = Table(displayName=nombre_tabla, ref=referencia)
-            tabla.tableStyleInfo = TableStyleInfo(
-                name='TableStyleMedium2', showFirstColumn=False,
-                showLastColumn=False, showRowStripes=True,
-                showColumnStripes=False,
-            )
-            ws.add_table(tabla)
+            # Excel repara y elimina una tabla cuyo rango contiene solo
+            # encabezados. La hoja vacia conserva su formato sin tabla.
+            if ultima_fila > fila_encabezado:
+                referencia = f'A{fila_encabezado}:{letra_final}{ultima_fila}'
+                tabla = Table(displayName=nombre_tabla, ref=referencia)
+                tabla.tableStyleInfo = TableStyleInfo(
+                    name='TableStyleMedium2', showFirstColumn=False,
+                    showLastColumn=False, showRowStripes=True,
+                    showColumnStripes=False,
+                )
+                ws.add_table(tabla)
 
             ws.sheet_properties.pageSetUpPr.fitToPage = True
             ws.page_setup.orientation = 'landscape'
