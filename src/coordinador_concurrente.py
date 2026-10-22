@@ -80,6 +80,9 @@ class RenovadorLease(AbstractContextManager):
         return False
 
 
+NOMBRE_EXCEL_LOTE = "reporte_lote.xlsx"
+
+
 class ExportadorResultadosEjecucion:
     """Unico escritor autorizado de los artefactos tabulares."""
 
@@ -135,6 +138,15 @@ class ExportadorResultadosEjecucion:
             self.gestor_casos.exportar_excel()
         self.pendientes.clear()
         return actualizados
+
+    def exportar_lote(self, causas):
+        """Excel solo con las causas de esta ejecución, junto al reporte completo."""
+        ruta = os.path.join(
+            os.path.dirname(os.path.abspath(self.gestor_casos.ruta_final)),
+            NOMBRE_EXCEL_LOTE,
+        )
+        self.gestor_casos.exportar_excel(causas=list(causas), ruta=ruta)
+        return ruta
 
 
 def _esperar_turno_inicio(bloqueo_inicio, ultimo_inicio, intervalo):
@@ -363,6 +375,11 @@ class CoordinadorConcurrente:
                         proceso.join(timeout=10)
 
         exportador.sincronizar(forzar=True)
+        try:
+            exportador.exportar_lote(causas)
+        except Exception as exc:
+            # Sin el Excel del lote, el servicio publica el reporte completo.
+            logger.warning("No se pudo generar el Excel del lote: %s", type(exc).__name__)
         stats = self.repositorio.obtener_estadisticas(ejecucion_id)
         fallidos = self.repositorio.listar_fallidos(ejecucion_id)
         self._guardar_fallidos(ruta_casos_fallidos, fallidos)

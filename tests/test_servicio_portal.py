@@ -283,7 +283,8 @@ class TestServicioPortal(unittest.TestCase):
         )
 
     def test_flujo_completo_publica_resultado(self):
-        (self.lote / "reporte_final.xlsx").write_bytes(b"final")
+        (self.lote / "reporte_final.xlsx").write_bytes(b"completo")
+        (self.lote / "reporte_lote.xlsx").write_bytes(b"final")
         solicitudes = SolicitudesFalsas([solicitud()])
         storage = StorageFalso()
         recibido = {}
@@ -303,8 +304,54 @@ class TestServicioPortal(unittest.TestCase):
         self.assertEqual(solicitudes.final["mensaje"], "ERROR_FINAL: 1, PROCESADO: 9")
         self.assertEqual(storage.subidas["resultados/%s.xlsx" % ID], b"final")
 
+    def test_publica_solo_las_causas_del_lote_y_el_completo_aparte(self):
+        (self.lote / "reporte_final.xlsx").write_bytes(b"todas")
+        (self.lote / "reporte_lote.xlsx").write_bytes(b"solo-lote")
+        solicitudes = SolicitudesFalsas([solicitud()])
+        storage = StorageFalso()
+        self.assertTrue(self.servicio(solicitudes, storage=storage).atender_una())
+        self.assertEqual(solicitudes.final["resultado_ruta"], "resultados/%s.xlsx" % ID)
+        self.assertEqual(storage.subidas["resultados/%s.xlsx" % ID], b"solo-lote")
+        self.assertEqual(storage.subidas["resultados/%s_completo.xlsx" % ID], b"todas")
+
+    def test_sin_excel_del_lote_no_publica_el_completo_como_si_fuera_del_lote(self):
+        (self.lote / "reporte_final.xlsx").write_bytes(b"todas")
+        solicitudes = SolicitudesFalsas([solicitud()])
+        storage = StorageFalso()
+        self.servicio(solicitudes, storage=storage).atender_una()
+        self.assertNotIn("resultados/%s.xlsx" % ID, storage.subidas)
+        self.assertEqual(storage.subidas["resultados/%s_completo.xlsx" % ID], b"todas")
+        self.assertIsNone(solicitudes.final["resultado_ruta"])
+        self.assertIn("EXCEL_LOTE_NO_DISPONIBLE", solicitudes.final["mensaje"])
+
+    def test_pendientes_conserva_el_reporte_completo(self):
+        (self.lote / "reporte_final.xlsx").write_bytes(b"todas")
+        (self.lote / "reporte_lote.xlsx").write_bytes(b"solo-lote")
+        solicitudes = SolicitudesFalsas([solicitud(modo="pendientes", parametro=None)])
+        storage = StorageFalso()
+        self.servicio(solicitudes, storage=storage).atender_una()
+        self.assertEqual(storage.subidas["resultados/%s.xlsx" % ID], b"todas")
+
+    def test_falla_del_completo_no_rompe_el_resultado(self):
+        (self.lote / "reporte_final.xlsx").write_bytes(b"todas")
+        (self.lote / "reporte_lote.xlsx").write_bytes(b"solo-lote")
+
+        class StorageSinCompleto(StorageFalso):
+            def subir(self, ruta, contenido, tipo=None):
+                if ruta.endswith("_completo.xlsx"):
+                    raise OSError("caido")
+                super().subir(ruta, contenido, tipo)
+
+        solicitudes = SolicitudesFalsas([solicitud()])
+        storage = StorageSinCompleto()
+        self.servicio(solicitudes, storage=storage).atender_una()
+        self.assertEqual(solicitudes.final["estado"], "COMPLETADA")
+        self.assertEqual(solicitudes.final["resultado_ruta"], "resultados/%s.xlsx" % ID)
+        self.assertEqual(storage.subidas["resultados/%s.xlsx" % ID], b"solo-lote")
+
     def test_lote_b2_publica_resultado_en_b2(self):
-        (self.lote / "reporte_final.xlsx").write_bytes(b"final")
+        (self.lote / "reporte_final.xlsx").write_bytes(b"completo")
+        (self.lote / "reporte_lote.xlsx").write_bytes(b"final")
         solicitudes = SolicitudesFalsas([solicitud(archivo_ruta=f"b2:entradas/{ID}/{ID}.xlsx")])
         storage = StorageFalso()
         self.assertTrue(self.servicio(solicitudes, storage=storage).atender_una())
@@ -371,7 +418,8 @@ class TestServicioPortal(unittest.TestCase):
         self.assertIn("POSTGRES_NO_DISPONIBLE", solicitudes.final["mensaje"])
 
     def test_falla_de_subida_no_pierde_el_resultado_del_lote(self):
-        (self.lote / "reporte_final.xlsx").write_bytes(b"final")
+        (self.lote / "reporte_final.xlsx").write_bytes(b"completo")
+        (self.lote / "reporte_lote.xlsx").write_bytes(b"final")
         storage = StorageFalso()
         storage.subir = MagicMock(side_effect=RuntimeError("STORAGE_SUBIDA_HTTP_500"))
         solicitudes = SolicitudesFalsas([solicitud()])

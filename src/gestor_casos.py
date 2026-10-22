@@ -485,11 +485,23 @@ class GestorCasos:
                     f"{comentario} | {motivo}" if comentario else motivo
                 )
 
-    def _preparar_exportacion(self, fecha_actual=None):
+    def _preparar_exportacion(self, fecha_actual=None, causas=None):
         self.calcular_dias_transcurridos(fecha_actual)
         df_export = self.df.copy()
+        if causas is not None:
+            # Solo las causas de una ejecución (portal: «solo» o «lote N»).
+            objetivos = {str(c).replace('-', '').strip() for c in causas if str(c).strip()}
+            numeros = df_export['NUMERO_JUICIO'].astype(str).str.replace(
+                '-', '', regex=False,
+            ).str.strip()
+            df_export = df_export.loc[numeros.isin(objetivos)].copy()
         if getattr(self, 'filtros', None):
             objetivos = self._causas_hoja_seleccion()
+            if objetivos is not None and causas is not None:
+                pedidas = {str(c).replace('-', '').strip() for c in causas if str(c).strip()}
+                if not pedidas.issubset(objetivos):
+                    raise ValueError('EXPORTACION_CAUSAS_FUERA_DE_SELECCION')
+                objetivos = pedidas
             if objetivos is not None:
                 numeros = df_export['NUMERO_JUICIO'].astype(str).str.replace(
                     '-', '', regex=False,
@@ -944,9 +956,13 @@ class GestorCasos:
         wb.save(ruta)
         wb.close()
 
-    def exportar_excel(self, fecha_actual=None):
-        """Genera el reporte, la hoja para Sistemas y las vistas de IA."""
-        reporte, para_carga = self._preparar_exportacion(fecha_actual)
+    def exportar_excel(self, fecha_actual=None, causas=None, ruta=None):
+        """Genera el reporte, la hoja para Sistemas y las vistas de IA.
+
+        Con ``causas`` el Excel contiene solo esas causas; con ``ruta`` se
+        escribe en otro archivo y ``ruta_final`` (el reporte completo) no cambia.
+        """
+        reporte, para_carga = self._preparar_exportacion(fecha_actual, causas)
         hitos = revisiones = None
         configuracion = getattr(self, 'config', {})
         if configuracion.get('inferencia_ia'):
@@ -965,7 +981,19 @@ class GestorCasos:
                         reporte, hitos, revisiones = preparar_vistas_ia(ruta_db, reporte)
             except Exception as exc:
                 logger.warning('No se pudieron preparar las vistas IA: %s', type(exc).__name__)
-        ruta_objetivo = os.path.abspath(self.ruta_final)
+        if causas is not None and hitos is not None:
+            # Las vistas de IA se consultan para toda la base; el Excel del
+            # lote no debe mostrar causas ajenas.
+            del_reporte = set(
+                reporte['NUMERO_JUICIO'].astype(str).str.replace('-', '', regex=False).str.strip()
+            )
+
+            def _solo_lote(tabla):
+                numeros = tabla['NUMERO_JUICIO'].astype(str).str.replace('-', '', regex=False).str.strip()
+                return tabla.loc[numeros.isin(del_reporte)].copy()
+
+            hitos, revisiones = _solo_lote(hitos), _solo_lote(revisiones)
+        ruta_objetivo = os.path.abspath(ruta or self.ruta_final)
         directorio = os.path.dirname(ruta_objetivo) or os.getcwd()
         os.makedirs(directorio, exist_ok=True)
         descriptor, ruta_temporal = tempfile.mkstemp(
@@ -995,7 +1023,8 @@ class GestorCasos:
                 )
                 os.replace(ruta_temporal, ruta_objetivo)
             ruta_temporal = None
-            self.ruta_final = ruta_objetivo
+            if ruta is None:
+                self.ruta_final = ruta_objetivo
             logger.info(
                 "Excel generado: %s filas en Reporte y %s en PARA CARGA.",
                 len(reporte), len(para_carga),

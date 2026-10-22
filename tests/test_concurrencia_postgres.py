@@ -1,3 +1,4 @@
+import os
 import time
 import unittest
 from contextlib import closing, contextmanager
@@ -98,11 +99,20 @@ class GestorCasosFalso:
         self.guardados += 1
         return True
 
-    def exportar_excel(self):
+    def exportar_excel(self, causas=None, ruta=None):
         self.exportados += 1
+        self.ultima_exportacion = (causas, ruta)
 
 
 class ExportadorUnicoTests(unittest.TestCase):
+    def test_exportar_lote_escribe_junto_al_reporte_completo(self):
+        gestor = GestorCasosFalso()
+        gestor.ruta_final = os.path.join("C:" + os.sep, "lotes", "abc", "reporte_final.xlsx")
+        exportador = ExportadorResultadosEjecucion(RepoResultadosFalso(), gestor, "run-1", 10)
+        ruta = exportador.exportar_lote(["CAUSA-01", "CAUSA-02"])
+        self.assertEqual(ruta, os.path.join(os.path.dirname(os.path.abspath(gestor.ruta_final)), "reporte_lote.xlsx"))
+        self.assertEqual(gestor.ultima_exportacion, (["CAUSA-01", "CAUSA-02"], ruta))
+
     def test_exporta_cada_diez_y_conserva_pendientes_en_memoria(self):
         repo = RepoResultadosFalso()
         gestor = GestorCasosFalso()
