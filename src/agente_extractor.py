@@ -5,6 +5,7 @@ import re
 import json
 import unicodedata
 from datetime import datetime
+from functools import lru_cache
 from bs4 import BeautifulSoup
 from src.catalogo_procesal import ids_para_estado
 from src.logger_config import obtener_logger
@@ -30,10 +31,34 @@ def normalizar_texto(texto):
     """
     if not texto:
         return ""
+    if isinstance(texto, str):
+        return _normalizar_cadena(texto)
+    return _normalizar_cadena(str(texto))
+
+
+@lru_cache(maxsize=65536)
+def _normalizar_cadena(texto):
+    """Normalización pura de una cadena: el motor la repite por cada término buscado."""
     texto = _decodificar_entidades_satje(texto).replace("\ufffd", "O")
     texto = unicodedata.normalize('NFD', str(texto))
     texto = ''.join(c for c in texto if unicodedata.category(c) != 'Mn')
     return texto.upper().strip()
+
+
+@lru_cache(maxsize=4096)
+def _textos_para_terminos(texto_evaluable):
+    """Texto sin HTML y texto con entidades decodificadas, una vez por actuación.
+
+    ``_termino_procesal_presente`` se llama por cada término del catálogo
+    sobre la misma actuación; sin esta caché limpia el texto completo en
+    cada llamada, lo que con autos largos domina el tiempo del motor.
+    """
+    texto_limpio = re.sub(r"<[^>]+>", " ", texto_evaluable)
+    texto_limpio = re.sub(r"\s+", " ", texto_limpio).strip()
+    texto_contextual = _decodificar_entidades_satje(texto_evaluable)
+    texto_contextual = re.sub(r"<[^>]+>", " ", texto_contextual)
+    texto_contextual = re.sub(r"\s+", " ", texto_contextual).strip()
+    return texto_limpio, texto_contextual
 
 
 class NavegadorArbolContenido:
@@ -486,12 +511,8 @@ class MotorInferenciaProcesal:
         """Evita que conectores linguisticos activen fases procesales."""
         termino_norm = normalizar_texto(termino)
         texto_evaluable = str(texto_normalizado or "")
-        texto_limpio = re.sub(r"<[^>]+>", " ", texto_evaluable)
-        texto_limpio = re.sub(r"\s+", " ", texto_limpio).strip()
+        texto_limpio, texto_contextual = _textos_para_terminos(texto_evaluable)
         es_rotulo_breve = len(texto_limpio) <= 220
-        texto_contextual = _decodificar_entidades_satje(texto_evaluable)
-        texto_contextual = re.sub(r"<[^>]+>", " ", texto_contextual)
-        texto_contextual = re.sub(r"\s+", " ", texto_contextual).strip()
 
         terminos_prensa = {
             "CITACION POR PRENSA", "PRENSA", "PERIODICO",
