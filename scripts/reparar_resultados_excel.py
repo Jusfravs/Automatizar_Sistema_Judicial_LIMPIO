@@ -1,5 +1,6 @@
 """Audita y repara resultados XLSX ya publicados en B2 y Supabase Storage.
 
+Incluye el resultado principal y el reporte completo separado si existe.
 Por defecto solo lee. Para reemplazar objetos exige --aplicar y --respaldo.
 """
 
@@ -27,7 +28,8 @@ def _sha(contenido: bytes) -> str:
     return hashlib.sha256(contenido).hexdigest()
 
 
-def _rutas(config: Path, *, comprobar_sin_lotes: bool) -> list[str]:
+def _rutas(config: Path, *, comprobar_sin_lotes: bool) -> list[tuple[str, bool]]:
+    """Lista principales y posibles completos; el segundo valor indica si es opcional."""
     repo = _repositorio(cargar_comun(config))
     conexion = repo._get_connection()
     try:
@@ -41,11 +43,22 @@ def _rutas(config: Path, *, comprobar_sin_lotes: bool) -> list[str]:
             if cursor.fetchone()[0]:
                 raise RuntimeError("HAY_LOTES_ACTIVOS")
         cursor.execute(
-            """SELECT DISTINCT resultado_ruta FROM public.solicitudes_lote
-               WHERE resultado_ruta IS NOT NULL AND resultado_ruta <> ''
-               ORDER BY resultado_ruta"""
+            """SELECT id, modo, archivo_ruta, resultado_ruta, mensaje
+               FROM public.solicitudes_lote
+               WHERE (resultado_ruta IS NOT NULL AND resultado_ruta <> '')
+                  OR mensaje LIKE '%EXCEL_LOTE_NO_DISPONIBLE%'
+               ORDER BY id"""
         )
-        return [fila[0] for fila in cursor.fetchall()]
+        rutas = []
+        for id_lote, modo, archivo_ruta, resultado_ruta, mensaje in cursor.fetchall():
+            if resultado_ruta:
+                rutas.append((resultado_ruta, False))
+            if modo != "pendientes" and (
+                resultado_ruta or "EXCEL_LOTE_NO_DISPONIBLE" in (mensaje or "")
+            ):
+                prefijo = "b2:" if archivo_ruta.startswith("b2:") else ""
+                rutas.append((f"{prefijo}resultados/{id_lote}_completo.xlsx", True))
+        return list(dict.fromkeys(rutas))
     finally:
         conexion.rollback()
         conexion.close()
@@ -73,27 +86,52 @@ def _verificar_celdas(original: bytes, reparado: bytes) -> None:
         despues.close()
 
 
+def _objeto_ausente(exc: Exception) -> bool:
+    """Reconoce solo un 404 real; los errores de red y permisos abortan la auditoría."""
+    if str(exc) == "STORAGE_DESCARGA_HTTP_404":
+        return True
+    respuesta = getattr(exc, "response", None)
+    if not isinstance(respuesta, dict):
+        return False
+    estado = respuesta.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    codigo = respuesta.get("Error", {}).get("Code")
+    return estado == 404 and codigo in {"404", "NoSuchKey", "NotFound"}
+
+
 def ejecutar(config: Path, aplicar: bool, respaldo: Path | None, esperado: int | None) -> dict:
     rutas = _rutas(config, comprobar_sin_lotes=aplicar)
-    if esperado is not None and len(rutas) != esperado:
-        raise RuntimeError(f"CANTIDAD_RESULTADOS_CAMBIO:{len(rutas)}")
     storage = ClienteStorage.desde_entorno()
     preparados = []
-    for ruta in rutas:
+    encontrados = []
+    completos_ausentes = 0
+    for ruta, opcional in rutas:
         if not ruta.endswith(".xlsx") or not (
             ruta.startswith("b2:resultados/") or ruta.startswith("resultados/")
         ):
             raise ValueError("RUTA_RESULTADO_INESPERADA")
-        original = storage.descargar(ruta)
+        try:
+            original = storage.descargar(ruta)
+        except Exception as exc:
+            if opcional and _objeto_ausente(exc):
+                completos_ausentes += 1
+                continue
+            raise
+        encontrados.append(ruta)
         reparado, eliminadas = reparar_tablas_vacias(original)
         if eliminadas:
             _verificar_celdas(original, reparado)
             preparados.append((ruta, original, reparado, eliminadas))
 
+    if esperado is not None and len(encontrados) != esperado:
+        raise RuntimeError(f"CANTIDAD_RESULTADOS_CAMBIO:{len(encontrados)}")
+
     resumen = {
-        "resultados": len(rutas),
+        "resultados": len(encontrados),
+        "principales": sum(not ruta.endswith("_completo.xlsx") for ruta in encontrados),
+        "completos": sum(ruta.endswith("_completo.xlsx") for ruta in encontrados),
+        "completos_ausentes": completos_ausentes,
         "afectados": len(preparados),
-        "sin_cambios": len(rutas) - len(preparados),
+        "sin_cambios": len(encontrados) - len(preparados),
         "b2_afectados": sum(ruta.startswith("b2:") for ruta, *_ in preparados),
         "supabase_afectados": sum(not ruta.startswith("b2:") for ruta, *_ in preparados),
         "aplicado": False,
@@ -142,7 +180,9 @@ def main() -> int:
     parser.add_argument("--config", type=Path, default=RAIZ / "config_supabase.json")
     parser.add_argument("--aplicar", action="store_true")
     parser.add_argument("--respaldo", type=Path)
-    parser.add_argument("--esperados", type=int)
+    parser.add_argument("--esperados", type=int, help=(
+        "Número de XLSX existentes: principales y completos; excluye completos ausentes"
+    ))
     args = parser.parse_args()
     if args.aplicar and args.respaldo is None:
         parser.error("--aplicar requiere --respaldo")
