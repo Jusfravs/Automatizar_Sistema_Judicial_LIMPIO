@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sqlite3
 import sys
 import time
@@ -23,7 +24,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import psycopg2
 from psycopg2.extras import Json
 
-from src.agente_extractor import MotorInferenciaProcesal
+from src.agente_extractor import (
+    MotorInferenciaProcesal, _decodificar_entidades_satje, normalizar_texto,
+)
 from src.repositorio_postgres import RepositorioColaPostgres
 
 
@@ -60,17 +63,70 @@ def _historial_guardado(filas: list[tuple], numero_causa: str, respaldo=None,
             if act_id in textos:
                 resumen["filas_emparejadas"] += 1
         titulo_r, detalle_r = textos.get(act_id, ("", ""))
-        titulo = titulo or titulo_r
-        detalle = detalle or detalle_r
+        titulo = _texto_plano(titulo or titulo_r)
+        detalle = _texto_plano(detalle or detalle_r)
+        # Un "título" que es el inicio de un HTML ("<p style=...VI") no es rótulo.
+        if str(titulo_r or "").lstrip().startswith("<") and titulo == detalle[:len(titulo)]:
+            titulo = ""
         historial.append({
-            "fecha": fecha, "titulo": titulo, "detalle": detalle or titulo,
+            "fecha": _fecha_dia(fecha), "titulo": titulo, "detalle": detalle or titulo,
             "ORIGEN_CARPETA": carpeta,
         })
+    return _unir_cuerpos(historial)
+
+
+_ISO = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+
+def _fecha_dia(fecha):
+    """El respaldo trae fechas ISO con hora; el motor ordena por día (dd/mm/aaaa)."""
+    m = _ISO.match(str(fecha or ""))
+    return f"{m[3]}/{m[2]}/{m[1]}" if m else fecha
+
+
+def _texto_plano(texto) -> str:
+    """Quita el HTML del respaldo y decodifica sus entidades (&OACUTE;, &NBSP;)."""
+    texto = re.sub(r"<[^>]*>", " ", str(texto or ""))
+    texto = _decodificar_entidades_satje(texto)
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def _unir_cuerpos(historial: list[dict]) -> list[dict]:
+    """Une al rótulo de un auto el cuerpo que el historial compactado guardó aparte.
+
+    En el histórico, «ABANDONO ... (AUTO INTERLOCUTORIO)» quedó como una fila
+    sin texto y el auto («VISTOS: ... se declara el abandono») como otra fila
+    del mismo día sin rótulo. Sin unirlas, la parte resolutiva nunca se lee y
+    el cierre queda POR_CONFIRMAR. Solo se une a autos (no a razones ni
+    constancias) cuyo detalle es su propio rótulo.
+    """
+    tipo_auto = re.compile(MotorInferenciaProcesal._CONDICION_TIPO_AUTO)
+    cuerpos: dict[str, list[str]] = {}
+    for act in historial:
+        if not act["titulo"] and act["detalle"]:
+            textos = cuerpos.setdefault(act["fecha"], [])
+            if act["detalle"] not in textos:
+                textos.append(act["detalle"])
+    if not cuerpos:
+        return historial
+    for act in historial:
+        rotulo = normalizar_texto(act["titulo"])
+        if (
+            rotulo and act["detalle"] == act["titulo"] and tipo_auto.search(rotulo)
+            and not MotorInferenciaProcesal.PATRON_RAZON.search(rotulo)
+            and act["fecha"] in cuerpos
+        ):
+            act["detalle"] = " ".join([act["titulo"], *cuerpos[act["fecha"]]])
     return historial
 
 
+def _sin_decision() -> dict:
+    """Sin historial o sin etapa no hay base para afirmar que la causa sigue vigente."""
+    return {"CONDICION": "POR_CONFIRMAR", "FECHA CONDICION": None, "ACTUACION CONDICION": None}
+
+
 def _condicion(filas_pg: list[tuple], numero_causa: str, payload, resumen: Counter,
-               respaldo=None) -> dict | None:
+               respaldo=None) -> dict:
     datos = {}
     if isinstance(payload, dict):
         datos = payload.get("datos") if isinstance(payload.get("datos"), dict) else payload
@@ -79,7 +135,9 @@ def _condicion(filas_pg: list[tuple], numero_causa: str, payload, resumen: Count
     actuaciones = (datos.get("HISTORIAL_ACTUACIONES")
                    or _historial_guardado(filas_pg, numero_causa, respaldo, resumen))
     if not actuaciones:
-        return None
+        resumen["sin_historial"] += 1
+        resumen["sin_actuaciones"] += 1
+        return _sin_decision()
     # Cobertura: alguna actuación trae detalle además del rótulo. No acredita
     # que haya una decisión legible: eso lo decide el motor (POR_CONFIRMAR).
     if any(str(a.get("detalle") or "").strip() not in ("", str(a.get("titulo") or "").strip())
@@ -94,7 +152,9 @@ def _condicion(filas_pg: list[tuple], numero_causa: str, payload, resumen: Count
         actuaciones, causa=numero_causa
     )
     if not resultado or not resultado.get("ULTIMA_ETAPA"):
-        return None
+        resumen["sin_historial"] += 1
+        resumen["sin_etapa"] += 1
+        return _sin_decision()
     return {
         "CONDICION": resultado.get("CONDICION") or "VIGENTE",
         "FECHA CONDICION": resultado.get("FECHA_CONDICION"),
@@ -125,9 +185,6 @@ def _procesar_lote(repo, aplicar, columna, desde, tamano, resumen, respaldo=None
         for numero_causa, payload, condicion_actual, version in filas:
             parcial["vistas"] += 1
             nueva = _condicion(historiales[numero_causa], numero_causa, payload, parcial, respaldo)
-            if nueva is None:
-                parcial["sin_historial"] += 1
-                continue
             parcial[nueva["CONDICION"]] += 1
             if nueva["CONDICION"] == condicion_actual:
                 continue
@@ -188,8 +245,8 @@ def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0,
     if aplicar and respaldo is None:
         # Sin el texto compactado casi todo el histórico quedaría POR_CONFIRMAR.
         raise RuntimeError("FALTA_RESPALDO: use --respaldo para --aplicar")
-    # En seco y antes de la migración, todas cuentan como VIGENTE.
-    columna = "condicion" if con_columna else "'VIGENTE'"
+    # En seco y antes de la migración, todas cuentan como el valor por defecto de 005.
+    columna = "condicion" if con_columna else "'POR_CONFIRMAR'"
     ultima_causa = desde
     fallos = 0
     while not (limite and resumen["vistas"] >= limite):

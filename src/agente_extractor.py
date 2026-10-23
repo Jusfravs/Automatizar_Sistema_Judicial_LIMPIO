@@ -2128,6 +2128,14 @@ class MotorInferenciaProcesal:
         r"|MANIFIESTA\w*|ESCRITO|AGREGA\w*|AGREGUESE|PARA RESOLVER|SE DECLARE|DECLARAR)\b"
     )
     PATRON_TRASLADO = re.compile(r"\b(?:CORRE\w* TRASLADO|CORRASE TRASLADO|TRASLADO A LA CONTRAPARTE)\b")
+    # Las oraciones que citan la norma o plantean un supuesto tampoco deciden:
+    # "si se declara el abandono por primera vez...", "el artículo 245 concede
+    # la facultad al juzgador...", "la o el juzgador se limitará a declarar...".
+    PATRON_NORMA = re.compile(
+        r"^\s*(?:SI|CUANDO)\b"
+        r"|\b(?:CONCEDE LA FACULTAD|SE LIMITARA A|LA O EL JUZGADOR|EL JUZGADOR (?:DECLARARA|PODRA)"
+        r"|(?:ARTICULO|ART\.?)\s*\d+\b[^.]{0,80}\b(?:DISPONE|ESTABLECE|SENALA|PRESCRIBE|INDICA))\b"
+    )
     PATRON_NEGACION_ORACION = re.compile(
         r"\b(?:NIEGA\w*|NIEGUESE|RECHAZA\w*|RECHACESE|DESECHA\w*|NO HA LUGAR|NO PROCEDE"
         r"|NO SE ACEPTA|NO ACEPTA|INADMITE\w*|NO SE DECLARA|IMPROCEDENTE"
@@ -2218,6 +2226,7 @@ class MotorInferenciaProcesal:
                 niega = True
             elif (
                 not cls.PATRON_PETICION.search(oracion)
+                and not cls.PATRON_NORMA.search(oracion)
                 and cls.PATRONES_RESOLUTIVOS[clave].search(oracion)
             ):
                 afirma = True

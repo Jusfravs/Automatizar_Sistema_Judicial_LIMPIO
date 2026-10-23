@@ -41,6 +41,24 @@ class TestCondicionCausa(unittest.TestCase):
         # La fase actual se conserva para retomarla si se reactiva.
         self.assertTrue(r.get("FASE_ACTUAL"))
 
+    def test_cita_de_la_norma_no_acredita_el_abandono(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
+             "detalle": "VISTOS: EL ARTICULO 245 DEL COGEP CONCEDE LA FACULTAD AL JUZGADOR CUANDO HAYA "
+                        "OPERADO EL ABANDONO DECLARARLO DE OFICIO. SI SE DECLARA EL ABANDONO POR PRIMERA VEZ, "
+                        "EL ACTOR PODRA DEMANDAR DE NUEVO. LA O EL JUZGADOR SE LIMITARA A DECLARAR QUE HA "
+                        "OPERADO EL ABANDONO. CUENTE LA SECRETARIA EL TIEMPO TRANSCURRIDO"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "POR_CONFIRMAR")
+
+    def test_cita_de_la_norma_no_tapa_la_decision(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
+             "detalle": "VISTOS: SI SE DECLARA EL ABANDONO POR PRIMERA VEZ, EL ACTOR PODRA DEMANDAR DE NUEVO. "
+                        "EN LO PRINCIPAL, SE DECLARA EL ABANDONO DE LA INSTANCIA"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
+
     def test_archivo_por_no_completar_demanda(self):
         r = inferir(BASE[:1] + [{
             "fecha": "20/02/2024", "titulo": "ARCHIVO POR NO COMPLETAR DEMANDA (AUTO INTERLOCUTORIO)",

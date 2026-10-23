@@ -1,8 +1,11 @@
 -- Condición de la causa: tercer eje, aparte de la etapa y la fase.
--- VIGENTE (por defecto), ARCHIVADA, ABANDONADA, CONCLUIDA o POR_CONFIRMAR
--- (un auto de cierre cuyo texto resolutivo no se pudo leer). Aditiva.
+-- VIGENTE, ARCHIVADA, ABANDONADA, CONCLUIDA o POR_CONFIRMAR (no se pudo
+-- decidir: auto de cierre sin texto resolutivo o causa sin historial). Aditiva.
+-- El histórico entra como POR_CONFIRMAR, no VIGENTE: hasta que
+-- scripts/recalcular_condicion.py lo lea, su condición no está comprobada.
+-- El motor siempre escribe la condición al procesar una causa.
 ALTER TABLE expedientes
-    ADD COLUMN IF NOT EXISTS condicion VARCHAR(20) NOT NULL DEFAULT 'VIGENTE',
+    ADD COLUMN IF NOT EXISTS condicion VARCHAR(20) NOT NULL DEFAULT 'POR_CONFIRMAR',
     ADD COLUMN IF NOT EXISTS fecha_condicion VARCHAR(50),
     ADD COLUMN IF NOT EXISTS actuacion_condicion TEXT;
 
