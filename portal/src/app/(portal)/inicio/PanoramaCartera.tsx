@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useRef } from 'react'
 import { useInView, useReducedMotion } from 'motion/react'
 import { BarChart } from '@/components/charts/bar-chart'
@@ -13,10 +14,13 @@ import { ChartTooltip, TooltipContent } from '@/components/charts/tooltip'
 import { Card, CardBody, CardHeader } from '@/components/ui'
 import { FOCO } from '@/components/ui/estilos'
 import { cx } from '@/lib/cx'
+import { CONDICIONES_CASO, CONDICION_ETIQUETAS, condicionEnRecuento } from '@/lib/casos'
 
 /** `orden` 1–6 es el número procesal; ≥ 100, una etapa del catálogo sin número (va al final, sin prefijo). */
 export type EtapaResumen = { orden: number; corta: string; nombre: string; causas: number }
 export type DiaActividad = { dia: string; causas: number }
+/** Causas cerradas (archivadas, abandonadas, concluidas): se cuentan aparte del gráfico de etapas. */
+export type CondicionResumen = { condicion: string; causas: number }
 
 const COLOR = 'var(--chart-1)'
 // Las barras crecen una sola vez, al entrar en pantalla (dato que llega), y en poco tiempo: Inicio
@@ -145,11 +149,15 @@ function useVisible() {
   return { ref, visible }
 }
 
-function GraficoEtapas({ etapas, sinEtapa }: { etapas: EtapaResumen[]; sinEtapa: number }) {
+function GraficoEtapas({ etapas, sinEtapa, cerradas }: { etapas: EtapaResumen[]; sinEtapa: number; cerradas: CondicionResumen[] }) {
   const reducido = useReducedMotion() ?? false
   const { ref, visible } = useVisible()
   const datos = useMemo(() => etapas.map((e) => ({ etapa: e.orden < 100 ? `${e.orden} ${e.corta}` : e.corta, causas: e.causas, nombre: e.nombre })), [etapas])
   const total = etapas.reduce((s, e) => s + e.causas, 0)
+  const porConfirmar = cerradas.find((c) => c.condicion === 'POR_CONFIRMAR')?.causas ?? 0
+  const conCierre = cerradas
+    .filter((c) => c.causas > 0 && c.condicion !== 'POR_CONFIRMAR')
+    .sort((a, b) => CONDICIONES_CASO.indexOf(a.condicion) - CONDICIONES_CASO.indexOf(b.condicion))
   // Margen derecho: lo justo para la cifra más larga tras su barra.
   const margenDerecho = intFmt(Math.max(0, ...etapas.map((e) => e.causas))).length * 7 + 12
 
@@ -158,11 +166,11 @@ function GraficoEtapas({ etapas, sinEtapa }: { etapas: EtapaResumen[]; sinEtapa:
       <CardHeader
         nivel={3}
         titulo="Causas por etapa procesal"
-        descripcion={`Etapa actual de ${intFmt(total)} ${total === 1 ? 'causa' : 'causas'}, en orden del proceso`}
+        descripcion={`Etapa actual de ${intFmt(total)} ${total === 1 ? 'causa' : 'causas'} sin cierre confirmado, en orden del proceso`}
       />
       <CardBody className="flex flex-1 flex-col gap-3">
         {total === 0 ? (
-          <p className="text-sm text-muted">Aún no hay causas con etapa procesal.</p>
+          <p className="text-sm text-muted">Aún no hay causas vigentes con etapa procesal.</p>
         ) : (
           // aria-hidden en el contenedor: Bklit monta ejes y tooltip fuera del SVG. Los datos están en la tabla.
           <div ref={ref} aria-hidden="true" className="isolate aspect-[3/2] w-full sm:aspect-[16/9]">
@@ -195,8 +203,37 @@ function GraficoEtapas({ etapas, sinEtapa }: { etapas: EtapaResumen[]; sinEtapa:
           ) : null}
           </div>
         )}
-        {sinEtapa > 0 ? (
+        {conCierre.length > 0 ? (
           <p className="mt-auto text-xs text-muted">
+            Se cuentan aparte las causas cerradas:{' '}
+            {conCierre.map((c, i) => (
+              <span key={c.condicion}>
+                {i > 0 ? ', ' : null}
+                <Link
+                  href={`/casos?condicion=${c.condicion}`}
+                  className={cx('rounded-sm font-medium text-fg underline-offset-2 hover:text-primary hover:underline', FOCO)}
+                >
+                  {intFmt(c.causas)} {condicionEnRecuento(c.condicion, c.causas)}
+                </Link>
+              </span>
+            ))}
+            .
+          </p>
+        ) : null}
+        {porConfirmar > 0 ? (
+          <p className={cx('text-xs text-muted', conCierre.length === 0 && 'mt-auto')}>
+            Incluye{' '}
+            <Link
+              href="/casos?condicion=POR_CONFIRMAR"
+              className={cx('rounded-sm font-medium text-fg underline-offset-2 hover:text-primary hover:underline', FOCO)}
+            >
+              {intFmt(porConfirmar)} con cierre por confirmar
+            </Link>
+            : un auto podría cerrarlas, pero su texto no es concluyente.
+          </p>
+        ) : null}
+        {sinEtapa > 0 ? (
+          <p className={cx('text-xs text-muted', conCierre.length === 0 && porConfirmar === 0 && 'mt-auto')}>
             {intFmt(sinEtapa)} {sinEtapa === 1 ? 'causa' : 'causas'} sin etapa (revisión manual, excluidas o sin datos) no
             {sinEtapa === 1 ? ' aparece' : ' aparecen'} en el gráfico.
           </p>
@@ -204,7 +241,12 @@ function GraficoEtapas({ etapas, sinEtapa }: { etapas: EtapaResumen[]; sinEtapa:
         <TablaDatos
           titulo="Causas por etapa procesal"
           columnas={['Etapa', 'Causas']}
-          filas={[...etapas.map((e): [string, number] => [e.orden < 100 ? `${e.orden}. ${e.nombre}` : e.nombre, e.causas]), ['Sin etapa', sinEtapa]]}
+          filas={[
+            ...etapas.map((e): [string, number] => [e.orden < 100 ? `${e.orden}. ${e.nombre}` : e.nombre, e.causas]),
+            ['Sin etapa', sinEtapa],
+            ...(porConfirmar > 0 ? [['Con cierre por confirmar (incluidas arriba)', porConfirmar] as [string, number]] : []),
+            ...conCierre.map((c): [string, number] => [`${CONDICION_ETIQUETAS[c.condicion] ?? c.condicion} (aparte)`, c.causas]),
+          ]}
         />
       </CardBody>
     </Card>
@@ -292,10 +334,12 @@ export function PanoramaCartera({
   etapas,
   sinEtapa,
   dias,
+  cerradas,
 }: {
   etapas: EtapaResumen[]
   sinEtapa: number
   dias: DiaActividad[]
+  cerradas: CondicionResumen[]
 }) {
   return (
     <section aria-labelledby="panorama-titulo" className="space-y-3">
@@ -303,7 +347,7 @@ export function PanoramaCartera({
         Panorama de la cartera
       </h2>
       <div className="grid gap-3 sm:gap-4 lg:grid-cols-2">
-        <GraficoEtapas etapas={etapas} sinEtapa={sinEtapa} />
+        <GraficoEtapas etapas={etapas} sinEtapa={sinEtapa} cerradas={cerradas} />
         <GraficoActividad dias={dias} />
       </div>
     </section>

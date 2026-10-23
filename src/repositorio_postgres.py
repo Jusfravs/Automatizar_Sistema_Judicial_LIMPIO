@@ -295,6 +295,9 @@ class RepositorioColaPostgres:
             "fas_id_ultima": datos.get("fas_id ULTIMA FASE"),
             "eta_id_actual": datos.get("eta_id ETAPA ACTUAL"),
             "fas_id_actual": datos.get("fas_id FASE ACTUAL"),
+            "condicion": datos.get("CONDICION") or "VIGENTE",
+            "fecha_condicion": datos.get("FECHA CONDICION"),
+            "actuacion_condicion": datos.get("ACTUACION CONDICION"),
         }
 
     def completar_trabajo(
@@ -347,10 +350,12 @@ class RepositorioColaPostgres:
                         fas_id_fase_actual, fase_actual, fecha_inicio_fase_actual,
                         mensaje_especial, actor, demandado, tipo_accion,
                         fecha_inicio_juicio, total_actuaciones, origen,
-                        reintentos, datos_json, version_fuente_en, actualizado_en
+                        reintentos, datos_json,
+                        condicion, fecha_condicion, actuacion_condicion,
+                        version_fuente_en, actualizado_en
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     )
                     ON CONFLICT (numero_causa) DO UPDATE SET
@@ -375,6 +380,9 @@ class RepositorioColaPostgres:
                         origen = EXCLUDED.origen,
                         reintentos = EXCLUDED.reintentos,
                         datos_json = EXCLUDED.datos_json,
+                        condicion = EXCLUDED.condicion,
+                        fecha_condicion = EXCLUDED.fecha_condicion,
+                        actuacion_condicion = EXCLUDED.actuacion_condicion,
                         version_fuente_en = CURRENT_TIMESTAMP,
                         actualizado_en = CURRENT_TIMESTAMP
                     """,
@@ -405,6 +413,11 @@ class RepositorioColaPostgres:
                         origen,
                         trabajo.intentos,
                         Json(payload),
+                        campos["condicion"],
+                        str(campos["fecha_condicion"])
+                        if campos["fecha_condicion"]
+                        else None,
+                        campos["actuacion_condicion"],
                     ),
                 )
                 if isinstance(registro_inferencia_ia, dict):

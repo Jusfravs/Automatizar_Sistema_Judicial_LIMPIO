@@ -470,6 +470,9 @@ export type Database = {
           actualizado_en: string | null
           archivo_segmento: string | null
           ciudad: string | null
+          condicion: string
+          fecha_condicion: string | null
+          actuacion_condicion: string | null
           creado_en: string | null
           datos_json: Json | null
           demandado: string | null
@@ -501,6 +504,9 @@ export type Database = {
           actualizado_en?: string | null
           archivo_segmento?: string | null
           ciudad?: string | null
+          condicion?: string
+          fecha_condicion?: string | null
+          actuacion_condicion?: string | null
           creado_en?: string | null
           datos_json?: Json | null
           demandado?: string | null
@@ -532,6 +538,9 @@ export type Database = {
           actualizado_en?: string | null
           archivo_segmento?: string | null
           ciudad?: string | null
+          condicion?: string
+          fecha_condicion?: string | null
+          actuacion_condicion?: string | null
           creado_en?: string | null
           datos_json?: Json | null
           demandado?: string | null
@@ -1115,6 +1124,13 @@ export type Database = {
           total_actuaciones?: number | null
           ultima_etapa?: string | null
           ultima_fase?: string | null
+        }
+        Relationships: []
+      }
+      v_resumen_condicion: {
+        Row: {
+          causas: number | null
+          condicion: string | null
         }
         Relationships: []
       }

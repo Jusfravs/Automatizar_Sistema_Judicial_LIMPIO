@@ -5,6 +5,7 @@ import re
 import json
 import unicodedata
 from datetime import datetime
+from functools import lru_cache
 from bs4 import BeautifulSoup
 from src.catalogo_procesal import ids_para_estado
 from src.logger_config import obtener_logger
@@ -30,10 +31,40 @@ def normalizar_texto(texto):
     """
     if not texto:
         return ""
+    texto = texto if isinstance(texto, str) else str(texto)
+    # Los textos largos (autos completos, de hasta millones de caracteres) no
+    # se guardan en caché: ocuparían memoria del servicio sin límite en bytes.
+    if len(texto) > _MAXIMO_EN_CACHE:
+        return _normalizar_cadena.__wrapped__(texto)
+    return _normalizar_cadena(texto)
+
+
+_MAXIMO_EN_CACHE = 16 * 1024
+
+
+@lru_cache(maxsize=65536)
+def _normalizar_cadena(texto):
+    """Normalización pura de una cadena: el motor la repite por cada término buscado."""
     texto = _decodificar_entidades_satje(texto).replace("\ufffd", "O")
     texto = unicodedata.normalize('NFD', str(texto))
     texto = ''.join(c for c in texto if unicodedata.category(c) != 'Mn')
     return texto.upper().strip()
+
+
+@lru_cache(maxsize=4096)
+def _textos_para_terminos(texto_evaluable):
+    """Texto sin HTML y texto con entidades decodificadas, una vez por actuación.
+
+    ``_termino_procesal_presente`` se llama por cada término del catálogo
+    sobre la misma actuación; sin esta caché limpia el texto completo en
+    cada llamada, lo que con autos largos domina el tiempo del motor.
+    """
+    texto_limpio = re.sub(r"<[^>]+>", " ", texto_evaluable)
+    texto_limpio = re.sub(r"\s+", " ", texto_limpio).strip()
+    texto_contextual = _decodificar_entidades_satje(texto_evaluable)
+    texto_contextual = re.sub(r"<[^>]+>", " ", texto_contextual)
+    texto_contextual = re.sub(r"\s+", " ", texto_contextual).strip()
+    return texto_limpio, texto_contextual
 
 
 class NavegadorArbolContenido:
@@ -72,7 +103,7 @@ class ResultadoInferencia(tuple):
     def __new__(cls, ultima_etapa, ultima_fase, fecha_fin, etapa_actual=None, fase_actual=None, mensaje_especial=None, **_):
         return super().__new__(cls, (ultima_etapa, ultima_fase, fecha_fin))
 
-    def __init__(self, ultima_etapa, ultima_fase, fecha_fin, etapa_actual=None, fase_actual=None, mensaje_especial=None, actuacion_respaldo=None, regla_aplicada=None, fase_original=None, fecha_original=None, actuacion_pendiente_revision=None, fecha_inicio_fase_actual=None):
+    def __init__(self, ultima_etapa, ultima_fase, fecha_fin, etapa_actual=None, fase_actual=None, mensaje_especial=None, actuacion_respaldo=None, regla_aplicada=None, fase_original=None, fecha_original=None, actuacion_pendiente_revision=None, fecha_inicio_fase_actual=None, condicion=None, fecha_condicion=None, actuacion_condicion=None):
         self.ultima_etapa = ultima_etapa
         self.ultima_fase = ultima_fase
         self.fecha_fin_ultima_fase = fecha_fin
@@ -99,6 +130,12 @@ class ResultadoInferencia(tuple):
         self.fase_original = fase_original
         self.fecha_original = fecha_original
         self.actuacion_pendiente_revision = actuacion_pendiente_revision
+        # Tercer eje, independiente de etapa/fase: si la causa sigue viva o
+        # un auto la cerró (archivo, abandono o conclusión). La fase actual se
+        # conserva para retomarla si la causa se reactiva.
+        self.condicion = condicion or "VIGENTE"
+        self.fecha_condicion = fecha_condicion
+        self.actuacion_condicion = actuacion_condicion
 
     def get(self, key, default=None):
         mapping = {
@@ -122,6 +159,9 @@ class ResultadoInferencia(tuple):
             "FASE_ORIGINAL": self.fase_original,
             "FECHA_ORIGINAL": self.fecha_original,
             "ACTUACION_PENDIENTE_REVISION": self.actuacion_pendiente_revision,
+            "CONDICION": self.condicion,
+            "FECHA_CONDICION": self.fecha_condicion,
+            "ACTUACION_CONDICION": self.actuacion_condicion,
             # Los campos operativos históricos consumidos por el bot deben
             # representar el estado al que llegó la causa, no el hito previo
             # que lo habilitó. Los campos ULTIMA_* conservan ese hito y su
@@ -477,12 +517,11 @@ class MotorInferenciaProcesal:
         """Evita que conectores linguisticos activen fases procesales."""
         termino_norm = normalizar_texto(termino)
         texto_evaluable = str(texto_normalizado or "")
-        texto_limpio = re.sub(r"<[^>]+>", " ", texto_evaluable)
-        texto_limpio = re.sub(r"\s+", " ", texto_limpio).strip()
+        texto_limpio, texto_contextual = (
+            _textos_para_terminos(texto_evaluable) if len(texto_evaluable) <= _MAXIMO_EN_CACHE
+            else _textos_para_terminos.__wrapped__(texto_evaluable)
+        )
         es_rotulo_breve = len(texto_limpio) <= 220
-        texto_contextual = _decodificar_entidades_satje(texto_evaluable)
-        texto_contextual = re.sub(r"<[^>]+>", " ", texto_contextual)
-        texto_contextual = re.sub(r"\s+", " ", texto_contextual).strip()
 
         terminos_prensa = {
             "CITACION POR PRENSA", "PRENSA", "PERIODICO",
@@ -2084,6 +2123,289 @@ class MotorInferenciaProcesal:
             filtradas.append(actuacion)
         return filtradas
 
+    # Autos de SATJE que cierran la causa. Se reconocen por su rótulo con el
+    # tipo de providencia ("ABANDONO (AUTO RESOLUTIVO)"), no por menciones en
+    # escritos o razones. El envío al archivo general es custodia documental
+    # "hasta impulso de las partes" y deja la causa VIGENTE; la inhibición o
+    # abstención remite la causa a otro juez y tampoco la cierra.
+    _CONDICION_TIPO_AUTO = r"[^(]{0,80}\(\s*(?:AUTO|RAZON DE NOTIFICACION|RESOLUCION|SENTENCIA)\b"
+    PATRONES_CONDICION = (
+        ("ABANDONADA", re.compile(r"^\s*ABANDONO\b" + _CONDICION_TIPO_AUTO)),
+        ("CONCLUIDA", re.compile(
+            r"^\s*(?:ACUERDO TRANSACCIONAL|SOLUCION O PAGO Y/O EXTINCION DE LA OBLIGACION"
+            r"|ACUERDO DE MEDIACION|ARCHIVO POR ACUERDO DE MEDIACION"
+            r"|CONCLUSION DE LA EJECUCION|ACUERDO DE CONCILIACION)\b"
+            + _CONDICION_TIPO_AUTO
+        )),
+        ("ARCHIVADA", re.compile(
+            r"^\s*(?:ARCHIVO POR NO COMPLETAR DEMANDA|ARCHIVO DE LA CAUSA|ARCHIVO DEL PROCESO"
+            r"|ARCHIVO POR RETIRO DE LA DEMANDA)\b"
+            + _CONDICION_TIPO_AUTO
+        )),
+    )
+    # Una nulidad o revocatoria concedida después del cierre lo deja sin efecto.
+    PATRON_REACTIVACION = re.compile(
+        r"^\s*(?:NULIDAD PROCESAL|NULIDAD POR FALTA DE (?:CITACION|NOTIFICACION)"
+        r"|NULIDAD DE REMATE|ACEPTAR REVOCATORIA|(?:SE\s+)?DEJA(?:R)? SIN EFECTO"
+        r"|REVOCA\w*)\b" + _CONDICION_TIPO_AUTO
+    )
+    # Rótulos que dan cuenta de un auto sin decidir ("ABANDONO (RAZON DE NOTIFICACION)").
+    PATRON_RAZON = re.compile(r"\(\s*(?:RAZON|CONSTANCIA|NOTIFICACION|OFICIO)\b")
+    # La parte resolutiva se lee oración por oración. Las oraciones que narran
+    # una petición o un trámite no deciden nada.
+    PATRON_PETICION = re.compile(
+        r"\b(?:SOLICITA\w*|PIDE\w*|PETICION\w*|PEDIDO|REQUIERE\w*|INSISTE\w*|ALEGA\w*"
+        r"|MANIFIESTA\w*|ESCRITO|AGREGA\w*|AGREGUESE|PARA RESOLVER|SE DECLARE|DECLARAR)\b"
+    )
+    PATRON_TRASLADO = re.compile(r"\b(?:CORRE\w* TRASLADO|CORRASE TRASLADO|TRASLADO A LA CONTRAPARTE)\b")
+    # Las oraciones que citan la norma o plantean un supuesto tampoco deciden:
+    # "si se declara el abandono por primera vez...", "el artículo 245 concede
+    # la facultad al juzgador...", "la o el juzgador se limitará a declarar...".
+    PATRON_NORMA = re.compile(
+        r"^\s*(?:SI|CUANDO)\b"
+        r"|\b(?:CONCEDE LA FACULTAD|SE LIMITARA A|LA O EL JUZGADOR|EL JUZGADOR (?:DECLARARA|PODRA)"
+        r"|(?:ARTICULO|ART\.?)\s*\d+\b[^.]{0,80}\b(?:DISPONE|ESTABLECE|SENALA|PRESCRIBE|INDICA))\b"
+    )
+    # Conectores con que el juez vuelve al caso tras citar la norma. Se corta
+    # la oración también delante de ellos aunque no haya coma.
+    _CONECTOR_RETOMA = (
+        r"EN LA ESPECIE|EN EL PRESENTE CASO|EN TAL VIRTUD|POR LO (?:QUE|EXPUESTO)|POR TANTO"
+        r"|POR ENDE|EN CONSECUENCIA|EN LO PRINCIPAL"
+    )
+    # Solo retoma una cláusula que EMPIEZA con el conector o con la decisión
+    # del juez. Un verbo en presente en medio de la cláusula ("en los casos en
+    # que se declara el abandono") sigue siendo parte del supuesto legal.
+    PATRON_RETOMA = re.compile(
+        r"^\s*(?:Y\s+)?(?:" + _CONECTOR_RETOMA + r"|SE DECLARA|DECLARO|DECLARESE|DECLARASE"
+        r"|SE DISPONE|DISPONGO|DISPONGASE|SE ORDENA|ORDENO|ARCHIVESE|ARCHIVASE|SE ARCHIVA"
+        r"|SE APRUEBA|APRUEBO|SE HOMOLOGA|HOMOLOGO)\b"
+    )
+    PATRON_NEGACION_ORACION = re.compile(
+        r"\b(?:NIEGA\w*|NIEGUESE|RECHAZA\w*|RECHACESE|DESECHA\w*|NO HA LUGAR|NO PROCEDE"
+        r"|NO SE ACEPTA|NO ACEPTA|INADMITE\w*|NO SE DECLARA|IMPROCEDENTE"
+        r"|NO (?:SE )?(?:DEJA\w*|REVOCA\w*|REVOCO|ARCHIVA\w*|APRUEBA\w*|HOMOLOGA\w*))\b"
+    )
+    # Objeto de cada decisión: la negación solo cuenta si recae sobre él.
+    OBJETO_DECISION = {
+        "ABANDONADA": r"ABANDON",
+        "ARCHIVADA": r"ARCHIV",
+        "CONCLUIDA": r"ACUERDO|TRANSACCION|CONCILIACION|PAGO|OBLIGACION|ARCHIV|EJECUCION",
+        "REACTIVACION": r"NULIDAD|NULO|REVOCATORIA|SIN EFECTO|REVOC",
+    }
+    # Lo que se revoca debe ser el cierre de la causa, no el archivo de un oficio.
+    _OBJETO_CIERRE = (
+        r"ABANDON\w*|AUTO DE (?:ABANDONO|ARCHIVO)|AUTO (?:QUE|DE FECHA)\b.{0,60}\b(?:ABANDON|ARCHIV)"
+        r"|ARCHIVO (?:DE LA (?:CAUSA|DEMANDA|PRESENTE)|DEL (?:PROCESO|JUICIO|EXPEDIENTE))"
+    )
+    # Fórmulas con que el juez resuelve (presente o imperativo, no infinitivo).
+    PATRONES_RESOLUTIVOS = {
+        "ABANDONADA": re.compile(
+            r"\b(?:SE DECLARA|DECLARO|DECLARASE|DECLARESE)\b.{0,80}\bABANDON"
+            r"|\bOPERADO EL ABANDONO\b|\bSE ACEPTA\b.{0,40}\bABANDON"
+        ),
+        "ARCHIVADA": re.compile(
+            r"\b(?:ARCHIVESE|ARCHIVASE|SE ARCHIVA)\b"
+            r"|\b(?:SE DISPONE|SE ORDENA|DISPONGO|ORDENO|DISPONGASE)\b.{0,60}\bARCHIV"
+        ),
+        "CONCLUIDA": re.compile(
+            r"\b(?:SE APRUEBA|APRUEBO|APRUEBESE|SE HOMOLOGA|HOMOLOGO|HOMOLOGUESE|SE ACEPTA|ACEPTESE)\b"
+            r".{0,80}\b(?:ACUERDO|TRANSACCION|CONCILIACION|PAGO)"
+            r"|\b(?:SE DECLARA|DECLARO|DECLARESE)\b.{0,80}\b(?:EXTINGUID|TERMINAD|CONCLUID|CUMPLID)"
+            r"|\b(?:ARCHIVESE|SE DISPONE EL ARCHIVO|SE ORDENA EL ARCHIVO)\b"
+        ),
+        "REACTIVACION": re.compile(
+            r"\b(?:SE DECLARA|DECLARO|DECLARESE)\b.{0,80}\b(?:NULIDAD|NULO)"
+            r"|\bSE ACEPTA\b.{0,40}\b(?:NULIDAD|REVOCATORIA)"
+            r"|\b(?:SE REVOCA|REVOCO|REVOQUESE|SE DEJA SIN EFECTO|DEJO SIN EFECTO|DEJESE SIN EFECTO)\b"
+            r".{0,60}\b(?:" + _OBJETO_CIERRE + r")"
+        ),
+    }
+    # Un auto con otro rótulo también puede dejar sin efecto el cierre.
+    PATRON_REACTIVACION_EN_CUERPO = re.compile(
+        r"\b(?:SE REVOCA|REVOCO|REVOQUESE|SE DEJA SIN EFECTO|DEJO SIN EFECTO|DEJESE SIN EFECTO)\b"
+        r".{0,60}\b(?:" + _OBJETO_CIERRE + r")"
+    )
+    FASES_CONCLUSION = {
+        "6.4 REMATE": "CASO SOLVENTADO POR REMATE",
+        "6.5 CONGELAMIENTO DE CUENTAS / CIERRE": "CASO SOLVENTADO POR CONGELAMIENTO",
+    }
+
+    @classmethod
+    def _oraciones_resolutivas(cls, rotulo, cuerpo, con_peticiones=False):
+        """Oraciones del cuerpo sin el rótulo; sin las que narran una petición salvo que se pidan."""
+        # El rótulo ("NULIDAD PROCESAL DECLARADA DE OFICIO (AUTO ...)") no es
+        # parte resolutiva: se descarta si el detalle empieza por él.
+        inicio = re.match(r"^[^()]{0,160}\([^)]*\)\s*", cuerpo)
+        resto = cuerpo[inicio.end():] if inicio and cuerpo.startswith(rotulo[:20]) else cuerpo
+        if resto == rotulo:
+            return []
+        return [
+            o.strip() for o in re.split(
+                r"[.;:]\s+|\n|,?\s+(?:Y|E|ASIMISMO|ADEMAS|PERO|EMPERO|SIN EMBARGO|MAS)\s+"
+                r"(?=(?:SE|NO|DECLAR|NIEG|RECHAZ|ARCHIV|ORDEN|DISPON)\w*\b)"
+                r"|,\s+(?=(?:SE|NO)\b)",
+                resto,
+            )
+            if o.strip() and (con_peticiones or not cls.PATRON_PETICION.search(o))
+        ]
+
+    @classmethod
+    def _sin_tramo_normativo(cls, oracion):
+        """Quita de la oración lo que cita la norma o plantea un supuesto.
+
+        Se descartan el texto entre comillas y, por cláusulas separadas por
+        comas, la que cita la norma y las que la continúan hasta que el juez
+        retoma el caso ("EN LA ESPECIE", "POR LO QUE", "SE DECLARA"...). Así
+        «el art. 245 dispone que el juzgador declarará el abandono, por lo que
+        se declara el abandono» conserva solo su decisión.
+        """
+        oracion = re.sub(r"\"[^\"]*\"|“[^”]*”", " ", oracion)
+        clausulas = []
+        en_norma = False
+        partes = re.split(r",\s*|\s+(?=(?:" + cls._CONECTOR_RETOMA + r")\b)", oracion)
+        for clausula in partes:
+            if cls.PATRON_NORMA.search(clausula):
+                en_norma = True
+                continue
+            if en_norma and not cls.PATRON_RETOMA.search(clausula):
+                continue
+            en_norma = False
+            clausulas.append(clausula)
+        return ", ".join(clausulas)
+
+    @classmethod
+    def _decision_del_auto(cls, rotulo, cuerpo, clave):
+        """Lee la parte resolutiva de un auto cuyo rótulo nombra un cierre o reactivación.
+
+        Devuelve ``"SI"`` si una oración del juez la acredita, ``"NO"`` si una
+        oración la niega y ninguna la acredita, y ``"SIN_TEXTO"`` cuando no se
+        puede decidir (historial compactado, solo trámite o señales opuestas):
+        en ese caso no se afirma nada.
+        """
+        objeto = re.compile(r"\b(?:" + cls.OBJETO_DECISION[clave] + r")")
+        afirma = niega = False
+        for oracion in cls._oraciones_resolutivas(rotulo, cuerpo, con_peticiones=True):
+            oracion = cls._sin_tramo_normativo(oracion)
+            # Negar o correr traslado de lo pedido es una decisión aunque la
+            # oración nombre la petición; afirmarlo dentro de ella no lo es.
+            if objeto.search(oracion) and (
+                cls.PATRON_NEGACION_ORACION.search(oracion)
+                or cls.PATRON_TRASLADO.search(oracion)
+            ):
+                niega = True
+            elif (
+                not cls.PATRON_PETICION.search(oracion)
+                and cls.PATRONES_RESOLUTIVOS[clave].search(oracion)
+            ):
+                afirma = True
+        if afirma and not niega:
+            return "SI"
+        if niega and not afirma:
+            return "NO"
+        return "SIN_TEXTO"
+
+    @classmethod
+    def _determinar_condicion(cls, actuaciones, hallazgos, mensaje_especial):
+        """Clasifica si la causa sigue VIGENTE, fue cerrada o falta confirmarlo.
+
+        Se usa el último cierre de la rama evaluada: un auto de archivo,
+        abandono o conclusión cuya parte resolutiva lo acredita, o el
+        remate/congelamiento que solventó la causa. Vuelve a VIGENTE si
+        después se concede una nulidad o revocatoria, o si tras un auto de
+        cierre la causa siguió avanzando (un hito desde la citación). Cuando el
+        texto no permite decidir, la condición queda POR_CONFIRMAR.
+        """
+        cierre = None
+        reactivaciones = []
+        for act in actuaciones:
+            fecha = cls._fecha_ordenable(act.get("fecha"))
+            # El archivo de un cuaderno deprecatorio cierra solo esa diligencia.
+            if "DEPRECATORI" in normalizar_texto(act.get("ORIGEN_CARPETA") or ""):
+                continue
+            # El rótulo manda; sin título, el inicio del detalle hace de rótulo.
+            rotulo = re.sub(r"\s+", " ", normalizar_texto(
+                act.get("titulo") or str(act.get("detalle") or "")[:200]
+            )).strip()
+            if not rotulo:
+                continue
+            cuerpo = re.sub(r"\s+", " ", normalizar_texto(act.get("detalle", ""))).strip()
+            # Una razón de notificación o constancia da cuenta de un auto, no
+            # decide: solo cuenta si su texto trae la decisión o si el auto no
+            # quedó en el historial (cierre por confirmar).
+            es_razon = bool(cls.PATRON_RAZON.search(rotulo))
+            if cls.PATRON_REACTIVACION.search(rotulo):
+                decision = cls._decision_del_auto(rotulo, cuerpo, "REACTIVACION")
+                if decision == "SIN_TEXTO" and es_razon:
+                    continue
+                if decision != "NO":
+                    reactivaciones.append((fecha, decision == "SI"))
+                continue
+            if re.search(cls._CONDICION_TIPO_AUTO, rotulo) and any(
+                cls.PATRON_REACTIVACION_EN_CUERPO.search(o)
+                and not cls.PATRON_NEGACION_ORACION.search(o)
+                for o in cls._oraciones_resolutivas(rotulo, cuerpo)
+            ):
+                reactivaciones.append((fecha, True))
+                continue
+            condicion = next(
+                (c for c, patron in cls.PATRONES_CONDICION if patron.search(rotulo)),
+                None,
+            )
+            if not condicion:
+                continue
+            decision = cls._decision_del_auto(rotulo, cuerpo, condicion)
+            if decision == "NO":
+                continue
+            confirmado = decision == "SI"
+            if es_razon and not confirmado and cierre is not None:
+                continue
+            # La razón de notificación del mismo día no desplaza al auto leído.
+            if (
+                cierre is None or fecha > cierre["orden"]
+                or (fecha == cierre["orden"] and (confirmado or not cierre["confirmado"]))
+            ):
+                cierre = {
+                    "orden": fecha, "condicion": condicion, "por_auto": True,
+                    "confirmado": confirmado,
+                    "fecha": act.get("fecha"), "actuacion": rotulo[:300],
+                }
+
+        if mensaje_especial in cls.FASES_CONCLUSION.values():
+            fase = next(f for f, m in cls.FASES_CONCLUSION.items() if m == mensaje_especial)
+            hito = cls._hallazgo_mas_reciente(hallazgos, fase)
+            orden = cls._fecha_ordenable(hito.get("fecha")) if hito else datetime.min
+            if cierre is None or orden >= cierre["orden"]:
+                cierre = {
+                    "orden": orden, "condicion": "CONCLUIDA", "por_auto": False,
+                    "confirmado": True,
+                    "fecha": hito.get("fecha") if hito else None,
+                    "actuacion": mensaje_especial,
+                }
+
+        if cierre is None:
+            return {}
+        posteriores = [confirmada for fecha, confirmada in reactivaciones if fecha > cierre["orden"]]
+        if any(posteriores):
+            return {}
+        # Una reactivación del mismo día no permite saber qué fue primero
+        # (SATJE no da un orden fiable dentro del día): queda para confirmar.
+        posteriores += [False for fecha, _ in reactivaciones if fecha == cierre["orden"]]
+        indice_citacion = cls.obtener_indice_fase("2.1 CITACION (PERSONA/BOLETA)")
+        if cierre["por_auto"] and any(
+            h.get("prioridad", -1) >= indice_citacion
+            and cls._fecha_ordenable(h.get("fecha")) > cierre["orden"]
+            for h in hallazgos
+        ):
+            return {}
+        # Un cierre sin parte resolutiva legible, o seguido de una nulidad que
+        # no se puede leer, no se afirma: queda para confirmar.
+        confirmado = cierre["confirmado"] and not posteriores
+        return {
+            "condicion": cierre["condicion"] if confirmado else "POR_CONFIRMAR",
+            "fecha_condicion": cierre["fecha"],
+            "actuacion_condicion": cierre["actuacion"],
+        }
+
     @classmethod
     def inferir_estado_procesal(
         cls, actuaciones, texto_global="", causa=None, demandados=None
@@ -2580,6 +2902,9 @@ class MotorInferenciaProcesal:
             fecha_original=fecha_original,
             actuacion_pendiente_revision=escrito_pendiente_revision,
             fecha_inicio_fase_actual=fecha_inicio_fase_actual,
+            **cls._determinar_condicion(
+                actuaciones_evaluar, hallazgos, mensaje_especial
+            ),
         )
 
 
@@ -2687,6 +3012,9 @@ class AgenteExtractor:
                 resultado["FASE ACTUAL"] = fase_operativa
                 resultado["fas_id FASE ACTUAL"] = res_inf.get("FAS_ID_FASE_ACTUAL")
                 resultado["FECHA INICIO FASE ACTUAL"] = fecha_fase_actual
+                resultado["CONDICION"] = res_inf.get("CONDICION")
+                resultado["FECHA CONDICION"] = res_inf.get("FECHA_CONDICION")
+                resultado["ACTUACION CONDICION"] = res_inf.get("ACTUACION_CONDICION")
                 if res_inf.get("MENSAJE_ESPECIAL"):
                     resultado["COMENTARIO_ULTIMO"] = res_inf.get("MENSAJE_ESPECIAL")
                 
