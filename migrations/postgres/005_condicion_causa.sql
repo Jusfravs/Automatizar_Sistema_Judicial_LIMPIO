@@ -9,6 +9,10 @@ ALTER TABLE expedientes
     ADD COLUMN IF NOT EXISTS fecha_condicion VARCHAR(50),
     ADD COLUMN IF NOT EXISTS actuacion_condicion TEXT;
 
+-- ADD COLUMN IF NOT EXISTS no cambia el default si una versión anterior de
+-- esta migración ya creó la columna con DEFAULT 'VIGENTE'.
+ALTER TABLE expedientes ALTER COLUMN condicion SET DEFAULT 'POR_CONFIRMAR';
+
 -- Se reemplaza siempre: una versión anterior de esta migración tenía 4 valores.
 ALTER TABLE expedientes DROP CONSTRAINT IF EXISTS expedientes_condicion_check;
 ALTER TABLE expedientes ADD CONSTRAINT expedientes_condicion_check

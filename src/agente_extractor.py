@@ -2136,6 +2136,15 @@ class MotorInferenciaProcesal:
         r"|\b(?:CONCEDE LA FACULTAD|SE LIMITARA A|LA O EL JUZGADOR|EL JUZGADOR (?:DECLARARA|PODRA)"
         r"|(?:ARTICULO|ART\.?)\s*\d+\b[^.]{0,80}\b(?:DISPONE|ESTABLECE|SENALA|PRESCRIBE|INDICA))\b"
     )
+    # El juez vuelve al caso después de citar la norma: con un conector al
+    # inicio de la cláusula o con un verbo de decisión en presente. "Que ha
+    # operado el abandono" sigue siendo parte de la cita.
+    PATRON_RETOMA = re.compile(
+        r"^\s*(?:EN LA ESPECIE|EN EL PRESENTE CASO|EN TAL VIRTUD|POR LO (?:QUE|EXPUESTO)|POR TANTO"
+        r"|POR ENDE|EN CONSECUENCIA|EN LO PRINCIPAL)\b"
+        r"|\b(?:SE DECLARA|DECLARO|DECLARESE|DECLARASE|SE DISPONE|DISPONGO|DISPONGASE|SE ORDENA"
+        r"|ORDENO|ARCHIVESE|ARCHIVASE|SE ARCHIVA|SE APRUEBA|APRUEBO|SE HOMOLOGA|HOMOLOGO)\b"
+    )
     PATRON_NEGACION_ORACION = re.compile(
         r"\b(?:NIEGA\w*|NIEGUESE|RECHAZA\w*|RECHACESE|DESECHA\w*|NO HA LUGAR|NO PROCEDE"
         r"|NO SE ACEPTA|NO ACEPTA|INADMITE\w*|NO SE DECLARA|IMPROCEDENTE"
@@ -2206,6 +2215,29 @@ class MotorInferenciaProcesal:
         ]
 
     @classmethod
+    def _sin_tramo_normativo(cls, oracion):
+        """Quita de la oración lo que cita la norma o plantea un supuesto.
+
+        Se descartan el texto entre comillas y, por cláusulas separadas por
+        comas, la que cita la norma y las que la continúan hasta que el juez
+        retoma el caso ("EN LA ESPECIE", "POR LO QUE", "SE DECLARA"...). Así
+        «el art. 245 dispone que el juzgador declarará el abandono, por lo que
+        se declara el abandono» conserva solo su decisión.
+        """
+        oracion = re.sub(r"\"[^\"]*\"|“[^”]*”", " ", oracion)
+        clausulas = []
+        en_norma = False
+        for clausula in re.split(r",\s*", oracion):
+            if cls.PATRON_NORMA.search(clausula):
+                en_norma = True
+                continue
+            if en_norma and not cls.PATRON_RETOMA.search(clausula):
+                continue
+            en_norma = False
+            clausulas.append(clausula)
+        return ", ".join(clausulas)
+
+    @classmethod
     def _decision_del_auto(cls, rotulo, cuerpo, clave):
         """Lee la parte resolutiva de un auto cuyo rótulo nombra un cierre o reactivación.
 
@@ -2217,6 +2249,7 @@ class MotorInferenciaProcesal:
         objeto = re.compile(r"\b(?:" + cls.OBJETO_DECISION[clave] + r")")
         afirma = niega = False
         for oracion in cls._oraciones_resolutivas(rotulo, cuerpo, con_peticiones=True):
+            oracion = cls._sin_tramo_normativo(oracion)
             # Negar o correr traslado de lo pedido es una decisión aunque la
             # oración nombre la petición; afirmarlo dentro de ella no lo es.
             if objeto.search(oracion) and (
@@ -2226,7 +2259,6 @@ class MotorInferenciaProcesal:
                 niega = True
             elif (
                 not cls.PATRON_PETICION.search(oracion)
-                and not cls.PATRON_NORMA.search(oracion)
                 and cls.PATRONES_RESOLUTIVOS[clave].search(oracion)
             ):
                 afirma = True

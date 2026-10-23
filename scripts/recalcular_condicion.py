@@ -63,16 +63,16 @@ def _historial_guardado(filas: list[tuple], numero_causa: str, respaldo=None,
             if act_id in textos:
                 resumen["filas_emparejadas"] += 1
         titulo_r, detalle_r = textos.get(act_id, ("", ""))
-        titulo = _texto_plano(titulo or titulo_r)
-        detalle = _texto_plano(detalle or detalle_r)
-        # Un "título" que es el inicio de un HTML ("<p style=...VI") no es rótulo.
-        if str(titulo_r or "").lstrip().startswith("<") and titulo == detalle[:len(titulo)]:
-            titulo = ""
+        # Un "título" que es el inicio de un HTML ("<p style=...VI") no es
+        # rótulo: es el comienzo del propio texto, recortado.
+        es_html = str(titulo or titulo_r or "").lstrip().startswith("<")
+        detalle = _texto_plano(detalle or detalle_r) or _texto_plano(titulo or titulo_r)
+        titulo = "" if es_html else _texto_plano(titulo or titulo_r)
         historial.append({
             "fecha": _fecha_dia(fecha), "titulo": titulo, "detalle": detalle or titulo,
             "ORIGEN_CARPETA": carpeta,
         })
-    return _unir_cuerpos(historial)
+    return _unir_cuerpos(historial, resumen)
 
 
 _ISO = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
@@ -91,33 +91,59 @@ def _texto_plano(texto) -> str:
     return re.sub(r"\s+", " ", texto).strip()
 
 
-def _unir_cuerpos(historial: list[dict]) -> list[dict]:
+def _unir_cuerpos(historial: list[dict], resumen=None) -> list[dict]:
     """Une al rótulo de un auto el cuerpo que el historial compactado guardó aparte.
 
     En el histórico, «ABANDONO ... (AUTO INTERLOCUTORIO)» quedó como una fila
     sin texto y el auto («VISTOS: ... se declara el abandono») como otra fila
     del mismo día sin rótulo. Sin unirlas, la parte resolutiva nunca se lee y
-    el cierre queda POR_CONFIRMAR. Solo se une a autos (no a razones ni
-    constancias) cuyo detalle es su propio rótulo.
+    el cierre queda POR_CONFIRMAR.
+
+    Ese día, en la misma carpeta, también quedan sin rótulo copias de los
+    rótulos, la razón del secretario («RAZÓN: ...») y la notificación («En
+    Quito, lunes ...»); solo un texto que abre con «VISTOS» es cuerpo de auto.
+    Se une cuando la pareja es inequívoca: un único rótulo de auto (no
+    razones ni constancias) y un único cuerpo de auto. Con varios candidatos
+    no se adivina: el auto queda sin texto (POR_CONFIRMAR).
     """
     tipo_auto = re.compile(MotorInferenciaProcesal._CONDICION_TIPO_AUTO)
-    cuerpos: dict[str, list[str]] = {}
+    cuerpos: dict[tuple, list[str]] = {}
+    autos: dict[tuple, dict[str, list[dict]]] = {}
     for act in historial:
-        if not act["titulo"] and act["detalle"]:
-            textos = cuerpos.setdefault(act["fecha"], [])
+        clave = (act["fecha"], _cuaderno(act.get("ORIGEN_CARPETA")))
+        rotulo = normalizar_texto(act["titulo"])
+        if not act["titulo"] and _PATRON_CUERPO_AUTO.match(normalizar_texto(act["detalle"])):
+            textos = cuerpos.setdefault(clave, [])
             if act["detalle"] not in textos:
                 textos.append(act["detalle"])
-    if not cuerpos:
-        return historial
-    for act in historial:
-        rotulo = normalizar_texto(act["titulo"])
-        if (
-            rotulo and act["detalle"] == act["titulo"] and tipo_auto.search(rotulo)
+        elif (
+            # Sin texto propio: el detalle es su rótulo u otro rótulo del día
+            # (el respaldo a veces trae el de la razón de notificación).
+            rotulo and _PATRON_SOLO_ROTULO.match(normalizar_texto(act["detalle"]))
+            and tipo_auto.search(rotulo)
             and not MotorInferenciaProcesal.PATRON_RAZON.search(rotulo)
-            and act["fecha"] in cuerpos
         ):
-            act["detalle"] = " ".join([act["titulo"], *cuerpos[act["fecha"]]])
+            # El mismo rótulo repetido es un solo auto.
+            autos.setdefault(clave, {}).setdefault(rotulo, []).append(act)
+    for clave, por_rotulo in autos.items():
+        textos = cuerpos.get(clave, [])
+        if len(por_rotulo) == 1 and len(textos) == 1:
+            for act in next(iter(por_rotulo.values())):
+                act["detalle"] = f"{act['titulo']} {textos[0]}"
+        elif textos and resumen is not None:
+            resumen["cuerpos_ambiguos"] += 1
     return historial
+
+
+def _cuaderno(carpeta) -> str:
+    """«causa_instancia_fecha_hora_huella»: la huella cambia en cada captura del mismo cuaderno."""
+    return re.sub(r"_[0-9a-f]{12}$", "", str(carpeta or ""))
+
+
+# Un auto de SATJE abre con «VISTOS» (a veces tras el nombre del juez).
+_PATRON_CUERPO_AUTO = re.compile(r"^.{0,300}?\bVISTOS\b")
+# Un rótulo de SATJE: texto corto con el tipo de providencia entre paréntesis.
+_PATRON_SOLO_ROTULO = re.compile(r"^[^()]{0,160}\([^)]*\)\s*$")
 
 
 def _sin_decision() -> dict:
@@ -130,10 +156,19 @@ def _condicion(filas_pg: list[tuple], numero_causa: str, payload, resumen: Count
     datos = {}
     if isinstance(payload, dict):
         datos = payload.get("datos") if isinstance(payload.get("datos"), dict) else payload
-    # El historial del lote queda en datos_json solo en algunas causas; el
-    # resto se lee del historial append-only (compactado: sin detalle).
-    actuaciones = (datos.get("HISTORIAL_ACTUACIONES")
-                   or _historial_guardado(filas_pg, numero_causa, respaldo, resumen))
+    # Fuente canónica: el historial append-only, que el respaldo completa
+    # (texto compactado, cuerpos aparte). El historial inline de datos_json
+    # solo conserva rótulos en muchas causas; se usa si no hay otro.
+    inline = datos.get("HISTORIAL_ACTUACIONES")
+    if filas_pg:
+        actuaciones = _historial_guardado(filas_pg, numero_causa, respaldo, resumen)
+        resumen["fuente_historial"] += 1
+        if inline:
+            resumen["inline_descartado"] += 1
+    else:
+        actuaciones = inline or []
+        if inline:
+            resumen["fuente_inline"] += 1
     if not actuaciones:
         resumen["sin_historial"] += 1
         resumen["sin_actuaciones"] += 1
@@ -162,6 +197,13 @@ def _condicion(filas_pg: list[tuple], numero_causa: str, payload, resumen: Count
     }
 
 
+def _metadatos(condicion: dict) -> tuple:
+    """Lo que se guarda en las columnas, en el mismo formato que la escritura."""
+    fecha = condicion["FECHA CONDICION"]
+    return (condicion["CONDICION"], str(fecha) if fecha else None,
+            condicion["ACTUACION CONDICION"])
+
+
 def _procesar_lote(repo, aplicar, columna, desde, tamano, resumen, respaldo=None) -> str | None:
     """Procesa hasta `tamano` causas tras `desde` en una conexión propia.
 
@@ -182,11 +224,13 @@ def _procesar_lote(repo, aplicar, columna, desde, tamano, resumen, respaldo=None
             return None
         parcial = Counter()
         historiales = _historiales_del_lote(conn, [f[0] for f in filas])
-        for numero_causa, payload, condicion_actual, version in filas:
+        for numero_causa, payload, actual, version in filas:
             parcial["vistas"] += 1
             nueva = _condicion(historiales[numero_causa], numero_causa, payload, parcial, respaldo)
             parcial[nueva["CONDICION"]] += 1
-            if nueva["CONDICION"] == condicion_actual:
+            # Se compara la condición con su fecha y actuación: un auto que
+            # sigue POR_CONFIRMAR pero ya tiene rótulo y fecha debe guardarlos.
+            if _metadatos(nueva) == tuple(actual):
                 continue
             parcial["cambian"] += 1
             if not aplicar:
@@ -246,7 +290,8 @@ def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0,
         # Sin el texto compactado casi todo el histórico quedaría POR_CONFIRMAR.
         raise RuntimeError("FALTA_RESPALDO: use --respaldo para --aplicar")
     # En seco y antes de la migración, todas cuentan como el valor por defecto de 005.
-    columna = "condicion" if con_columna else "'POR_CONFIRMAR'"
+    columna = ("ARRAY[condicion, fecha_condicion, actuacion_condicion]::text[]" if con_columna
+               else "ARRAY['POR_CONFIRMAR', NULL, NULL]::text[]")
     ultima_causa = desde
     fallos = 0
     while not (limite and resumen["vistas"] >= limite):
