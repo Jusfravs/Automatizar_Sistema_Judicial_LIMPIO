@@ -31,9 +31,15 @@ def normalizar_texto(texto):
     """
     if not texto:
         return ""
-    if isinstance(texto, str):
-        return _normalizar_cadena(texto)
-    return _normalizar_cadena(str(texto))
+    texto = texto if isinstance(texto, str) else str(texto)
+    # Los textos largos (autos completos, de hasta millones de caracteres) no
+    # se guardan en caché: ocuparían memoria del servicio sin límite en bytes.
+    if len(texto) > _MAXIMO_EN_CACHE:
+        return _normalizar_cadena.__wrapped__(texto)
+    return _normalizar_cadena(texto)
+
+
+_MAXIMO_EN_CACHE = 16 * 1024
 
 
 @lru_cache(maxsize=65536)
@@ -511,7 +517,10 @@ class MotorInferenciaProcesal:
         """Evita que conectores linguisticos activen fases procesales."""
         termino_norm = normalizar_texto(termino)
         texto_evaluable = str(texto_normalizado or "")
-        texto_limpio, texto_contextual = _textos_para_terminos(texto_evaluable)
+        texto_limpio, texto_contextual = (
+            _textos_para_terminos(texto_evaluable) if len(texto_evaluable) <= _MAXIMO_EN_CACHE
+            else _textos_para_terminos.__wrapped__(texto_evaluable)
+        )
         es_rotulo_breve = len(texto_limpio) <= 220
 
         terminos_prensa = {
@@ -2157,14 +2166,19 @@ class MotorInferenciaProcesal:
         r"|\b(?:CONCEDE LA FACULTAD|SE LIMITARA A|LA O EL JUZGADOR|EL JUZGADOR (?:DECLARARA|PODRA)"
         r"|(?:ARTICULO|ART\.?)\s*\d+\b[^.]{0,80}\b(?:DISPONE|ESTABLECE|SENALA|PRESCRIBE|INDICA))\b"
     )
-    # El juez vuelve al caso después de citar la norma: con un conector al
-    # inicio de la cláusula o con un verbo de decisión en presente. "Que ha
-    # operado el abandono" sigue siendo parte de la cita.
+    # Conectores con que el juez vuelve al caso tras citar la norma. Se corta
+    # la oración también delante de ellos aunque no haya coma.
+    _CONECTOR_RETOMA = (
+        r"EN LA ESPECIE|EN EL PRESENTE CASO|EN TAL VIRTUD|POR LO (?:QUE|EXPUESTO)|POR TANTO"
+        r"|POR ENDE|EN CONSECUENCIA|EN LO PRINCIPAL"
+    )
+    # Solo retoma una cláusula que EMPIEZA con el conector o con la decisión
+    # del juez. Un verbo en presente en medio de la cláusula ("en los casos en
+    # que se declara el abandono") sigue siendo parte del supuesto legal.
     PATRON_RETOMA = re.compile(
-        r"^\s*(?:EN LA ESPECIE|EN EL PRESENTE CASO|EN TAL VIRTUD|POR LO (?:QUE|EXPUESTO)|POR TANTO"
-        r"|POR ENDE|EN CONSECUENCIA|EN LO PRINCIPAL)\b"
-        r"|\b(?:SE DECLARA|DECLARO|DECLARESE|DECLARASE|SE DISPONE|DISPONGO|DISPONGASE|SE ORDENA"
-        r"|ORDENO|ARCHIVESE|ARCHIVASE|SE ARCHIVA|SE APRUEBA|APRUEBO|SE HOMOLOGA|HOMOLOGO)\b"
+        r"^\s*(?:Y\s+)?(?:" + _CONECTOR_RETOMA + r"|SE DECLARA|DECLARO|DECLARESE|DECLARASE"
+        r"|SE DISPONE|DISPONGO|DISPONGASE|SE ORDENA|ORDENO|ARCHIVESE|ARCHIVASE|SE ARCHIVA"
+        r"|SE APRUEBA|APRUEBO|SE HOMOLOGA|HOMOLOGO)\b"
     )
     PATRON_NEGACION_ORACION = re.compile(
         r"\b(?:NIEGA\w*|NIEGUESE|RECHAZA\w*|RECHACESE|DESECHA\w*|NO HA LUGAR|NO PROCEDE"
@@ -2248,7 +2262,8 @@ class MotorInferenciaProcesal:
         oracion = re.sub(r"\"[^\"]*\"|“[^”]*”", " ", oracion)
         clausulas = []
         en_norma = False
-        for clausula in re.split(r",\s*", oracion):
+        partes = re.split(r",\s*|\s+(?=(?:" + cls._CONECTOR_RETOMA + r")\b)", oracion)
+        for clausula in partes:
             if cls.PATRON_NORMA.search(clausula):
                 en_norma = True
                 continue

@@ -3,7 +3,7 @@ from collections import Counter
 from unittest.mock import patch
 
 from scripts.recalcular_condicion import (
-    _condicion, _historial_guardado, _metadatos, _sin_decision,
+    _condicion, _historial_guardado, _metadatos, _metadatos_json, _sin_decision,
 )
 from src.agente_extractor import MotorInferenciaProcesal
 
@@ -132,17 +132,67 @@ class TestRecalcularCondicion(unittest.TestCase):
         historial = _historial_guardado(filas, "17230-2024-00010", Respaldo())
         self.assertIn("SE DECLARA EL ABANDONO", historial[0]["detalle"])
 
-    def test_capturas_distintas_del_mismo_cuaderno_se_unen(self):
-        cuaderno = "17233201905759_1_01_10_2019_15_38_"
+    def test_cuerpo_con_titulo_html_de_la_misma_captura_se_une(self):
+        # Así viene en el respaldo: el texto del auto con su "título" HTML.
+        cuaderno = "17233201905759_1_01_10_2019_15_38_6eaedf66fea7"
         filas = [
             ("a1", "08/04/2025", "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
-             "", cuaderno + "6eaedf66fea7"),
-            ("a2", "2025-04-08T21:32:53", "<p>VISTOS: SE DECLARA EL ABANDONO", "", cuaderno + "6eaedf66fea7"),
-            ("a3", "2025-04-08T21:32:53", "", "VISTOS: SE DECLARA EL ABANDONO", cuaderno + "331850de943f"),
+             "", cuaderno),
+            ("a2", "2025-04-08T21:32:53", "<p>VISTOS: SE DECLARA EL ABANDONO", "", cuaderno),
         ]
         historial = _historial_guardado(filas, "17230-2024-00011")
         self.assertIn("SE DECLARA EL ABANDONO", historial[0]["detalle"])
         self.assertEqual(historial[1]["titulo"], "")
+
+    def test_otra_huella_con_el_mismo_prefijo_no_se_une(self):
+        # Revisión de Codex: la huella identifica dependencia e incidente.
+        prefijo = "17233201905759_1_01_10_2019_15_38_"
+        filas = [
+            ("a1", "08/04/2025", "ARCHIVO DE LA CAUSA (AUTO INTERLOCUTORIO)", "", prefijo + "6eaedf66fea7"),
+            ("a2", "08/04/2025", "", "VISTOS: SE DISPONE EL ARCHIVO DE LA CAUSA", prefijo + "331850de943f"),
+        ]
+        historial = _historial_guardado(filas, "17230-2024-00012")
+        self.assertNotIn("SE DISPONE", historial[0]["detalle"])
+
+    def test_razon_que_transcribe_un_auto_no_es_cuerpo(self):
+        # Revisión de Codex: falso ARCHIVADA por un VISTOS tardío en una razón.
+        filas = [
+            ("a1", "05/09/2025", "ARCHIVO DE LA CAUSA (AUTO INTERLOCUTORIO)", "", "C1"),
+            ("a2", "05/09/2025", "", "RAZON: SE DEJA CONSTANCIA DE QUE EL AUTO DE OTRA CAUSA DICE "
+             "VISTOS: SE DISPONE EL ARCHIVO DE LA CAUSA", "C1"),
+        ]
+        historial = _historial_guardado(filas, "17230-2024-00013")
+        self.assertNotIn("SE DISPONE", historial[0]["detalle"])
+
+    def test_auto_con_encabezado_de_fecha_y_hora_es_cuerpo(self):
+        filas = [
+            ("a1", "05/09/2025", "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
+             "", "C1"),
+            ("a2", "05/09/2025", "", "QUITO, VIERNES 5 DE SEPTIEMBRE DEL 2025, LAS 10H44. "
+             "VISTOS: SE DECLARA EL ABANDONO", "C1"),
+        ]
+        historial = _historial_guardado(filas, "17230-2024-00014")
+        self.assertIn("SE DECLARA EL ABANDONO", historial[0]["detalle"])
+
+    def test_rotulo_repetido_recibe_el_cuerpo_una_sola_vez(self):
+        resumen = Counter()
+        rotulo = "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)"
+        filas = [
+            ("a1", "05/09/2025", rotulo, "", "C1"),
+            ("a2", "05/09/2025", rotulo, "", "C1"),
+            ("a3", "05/09/2025", "", "VISTOS: SE DECLARA EL ABANDONO", "C1"),
+        ]
+        historial = _historial_guardado(filas, "17230-2024-00015", resumen=resumen)
+        self.assertIn("SE DECLARA", historial[0]["detalle"])
+        self.assertNotIn("SE DECLARA", historial[1]["detalle"])
+        self.assertEqual(resumen["autos_repetidos"], 1)
+
+    def test_falta_en_el_json_aunque_coincidan_las_columnas(self):
+        nueva = _sin_decision()
+        self.assertEqual(_metadatos_json({"datos": {}}), (None, None, None))
+        self.assertNotEqual(_metadatos_json({"datos": {}}), _metadatos(nueva))
+        self.assertIsNone(_metadatos_json({"otro": 1}))
+        self.assertEqual(_metadatos_json({"datos": {"CONDICION": "POR_CONFIRMAR"}}), _metadatos(nueva))
 
     def test_razon_de_notificacion_no_recibe_el_cuerpo(self):
         filas = [

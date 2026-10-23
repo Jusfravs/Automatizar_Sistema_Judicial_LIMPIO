@@ -67,14 +67,32 @@ class TestCondicionCausa(unittest.TestCase):
         ])
         self.assertEqual(r.get("CONDICION"), "ABANDONADA")
 
-    def test_decision_tras_la_cita_sin_conector(self):
+    def test_decision_tras_la_cita_sin_coma(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
+             "detalle": "VISTOS: EL ARTICULO 245 DEL COGEP DISPONE QUE EL JUZGADOR DECLARARA EL ABANDONO "
+                        "POR LO QUE SE DECLARA EL ABANDONO DE LA INSTANCIA"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
+
+    def test_supuesto_legal_con_verbo_presente_no_cierra(self):
+        # Revisión de Codex: "se declara" dentro del supuesto no es decisión.
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
+             "detalle": "VISTOS: EL ARTICULO 245 DISPONE QUE EL JUZGADOR, EN LOS CASOS EN QUE SE DECLARA "
+                        "EL ABANDONO POR PRIMERA VEZ, EL ACTOR PODRA DEMANDAR DE NUEVO"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "POR_CONFIRMAR")
+
+    def test_razonamiento_tras_la_cita_no_basta(self):
+        # Ante duda, POR_CONFIRMAR: la cláusula no empieza con la decisión.
         r = inferir(BASE + [
             {"fecha": "05/09/2025", "titulo": "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
              "detalle": "VISTOS: EL ARTICULO 245 DISPONE QUE EL JUZGADOR DECLARARA EL ABANDONO, "
                         "Y POR CUANTO LA PARTE ACCIONANTE HA DEJADO DE IMPULSAR EL PROCESO "
                         "SE DECLARA EL ABANDONO DE LA INSTANCIA"},
         ])
-        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
+        self.assertEqual(r.get("CONDICION"), "POR_CONFIRMAR")
 
     def test_continuacion_de_la_cita_no_acredita_el_abandono(self):
         r = inferir(BASE + [

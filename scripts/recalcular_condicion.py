@@ -9,6 +9,7 @@ la fase no se tocan. Sin ``--aplicar`` solo informa cuántas cambiarían.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import logging
 import re
@@ -102,6 +103,8 @@ def _unir_cuerpos(historial: list[dict], resumen=None) -> list[dict]:
     Ese día, en la misma carpeta, también quedan sin rótulo copias de los
     rótulos, la razón del secretario («RAZÓN: ...») y la notificación («En
     Quito, lunes ...»); solo un texto que abre con «VISTOS» es cuerpo de auto.
+    Si la misma captura trae el texto con un «título» HTML, ese texto también
+    es cuerpo sin rótulo (``_historial_guardado`` le quita el título).
     Se une cuando la pareja es inequívoca: un único rótulo de auto (no
     razones ni constancias) y un único cuerpo de auto. Con varios candidatos
     no se adivina: el auto queda sin texto (POR_CONFIRMAR).
@@ -110,7 +113,9 @@ def _unir_cuerpos(historial: list[dict], resumen=None) -> list[dict]:
     cuerpos: dict[tuple, list[str]] = {}
     autos: dict[tuple, dict[str, list[dict]]] = {}
     for act in historial:
-        clave = (act["fecha"], _cuaderno(act.get("ORIGEN_CARPETA")))
+        # Carpeta exacta: la huella final del código identifica dependencia e
+        # incidente, así que no se compara solo el prefijo.
+        clave = (act["fecha"], act.get("ORIGEN_CARPETA"))
         rotulo = normalizar_texto(act["titulo"])
         if not act["titulo"] and _PATRON_CUERPO_AUTO.match(normalizar_texto(act["detalle"])):
             textos = cuerpos.setdefault(clave, [])
@@ -123,25 +128,27 @@ def _unir_cuerpos(historial: list[dict], resumen=None) -> list[dict]:
             and tipo_auto.search(rotulo)
             and not MotorInferenciaProcesal.PATRON_RAZON.search(rotulo)
         ):
-            # El mismo rótulo repetido es un solo auto.
             autos.setdefault(clave, {}).setdefault(rotulo, []).append(act)
     for clave, por_rotulo in autos.items():
         textos = cuerpos.get(clave, [])
         if len(por_rotulo) == 1 and len(textos) == 1:
-            for act in next(iter(por_rotulo.values())):
-                act["detalle"] = f"{act['titulo']} {textos[0]}"
+            repetidos = next(iter(por_rotulo.values()))
+            # El cuerpo se pega a una sola fila: si el rótulo se repite no
+            # consta que sean el mismo auto, y no se duplica la decisión.
+            repetidos[0]["detalle"] = f"{repetidos[0]['titulo']} {textos[0]}"
+            if len(repetidos) > 1 and resumen is not None:
+                resumen["autos_repetidos"] += 1
         elif textos and resumen is not None:
             resumen["cuerpos_ambiguos"] += 1
     return historial
 
 
-def _cuaderno(carpeta) -> str:
-    """«causa_instancia_fecha_hora_huella»: la huella cambia en cada captura del mismo cuaderno."""
-    return re.sub(r"_[0-9a-f]{12}$", "", str(carpeta or ""))
-
-
-# Un auto de SATJE abre con «VISTOS» (a veces tras el nombre del juez).
-_PATRON_CUERPO_AUTO = re.compile(r"^.{0,300}?\bVISTOS\b")
+# Un auto de SATJE abre con «VISTOS», a lo sumo tras su encabezado de lugar,
+# fecha y hora («QUITO, LUNES 15 DE DICIEMBRE DEL 2025, LAS 10H44.»). Una
+# razón o constancia que transcribe otro auto no empieza así.
+_PATRON_CUERPO_AUTO = re.compile(
+    r"^\s*(?:[^.:]{0,160}?\b\d{1,2}\s*H\s*\d{2}\b[^.:]{0,40}[.:-]+\s*)?VISTOS\b"
+)
 # Un rótulo de SATJE: texto corto con el tipo de providencia entre paréntesis.
 _PATRON_SOLO_ROTULO = re.compile(r"^[^()]{0,160}\([^)]*\)\s*$")
 
@@ -204,7 +211,16 @@ def _metadatos(condicion: dict) -> tuple:
             condicion["ACTUACION CONDICION"])
 
 
-def _procesar_lote(repo, aplicar, columna, desde, tamano, resumen, respaldo=None) -> str | None:
+def _metadatos_json(payload) -> tuple | None:
+    """Condición guardada en datos_json.datos; None si no hay objeto datos (no se escribe ahí)."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("datos"), dict):
+        return None
+    return _metadatos({clave: payload["datos"].get(clave) for clave in
+                       ("CONDICION", "FECHA CONDICION", "ACTUACION CONDICION")})
+
+
+def _procesar_lote(repo, aplicar, columna, desde, tamano, resumen, respaldo=None,
+                   detalle=None) -> str | None:
     """Procesa hasta `tamano` causas tras `desde` en una conexión propia.
 
     Devuelve la última causa vista, o None si no quedan. Una conexión por
@@ -228,9 +244,14 @@ def _procesar_lote(repo, aplicar, columna, desde, tamano, resumen, respaldo=None
             parcial["vistas"] += 1
             nueva = _condicion(historiales[numero_causa], numero_causa, payload, parcial, respaldo)
             parcial[nueva["CONDICION"]] += 1
-            # Se compara la condición con su fecha y actuación: un auto que
-            # sigue POR_CONFIRMAR pero ya tiene rótulo y fecha debe guardarlos.
-            if _metadatos(nueva) == tuple(actual):
+            if detalle is not None:
+                detalle.append((numero_causa, *_metadatos(nueva)))
+            # Se compara la condición con su fecha y actuación, en las columnas
+            # y en datos_json.datos (lo que lee el Excel): si falta en
+            # cualquiera de los dos lugares, se escribe.
+            if _metadatos(nueva) == tuple(actual) and _metadatos_json(payload) in (
+                None, _metadatos(nueva)
+            ):
                 continue
             parcial["cambian"] += 1
             if not aplicar:
@@ -265,7 +286,8 @@ def _procesar_lote(repo, aplicar, columna, desde, tamano, resumen, respaldo=None
 
 
 def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0,
-               desde: str = "", intentos: int = 5, ruta_respaldo: Path | None = None) -> dict:
+               desde: str = "", intentos: int = 5, ruta_respaldo: Path | None = None,
+               ruta_detalle: Path | None = None) -> dict:
     config = json.loads(config_path.read_text(encoding="utf-8-sig"))
     # Solo lectura: el índice nunca se modifica desde aquí.
     respaldo = (
@@ -294,12 +316,17 @@ def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0,
                else "ARRAY['POR_CONFIRMAR', NULL, NULL]::text[]")
     ultima_causa = desde
     fallos = 0
+    filas_detalle: list[tuple] = []
     while not (limite and resumen["vistas"] >= limite):
         tamano = min(50, limite - resumen["vistas"]) if limite else 50
         try:
+            lote_detalle: list[tuple] = []
             siguiente = _procesar_lote(
-                repo, aplicar, columna, ultima_causa, tamano, resumen, respaldo
+                repo, aplicar, columna, ultima_causa, tamano, resumen, respaldo,
+                lote_detalle if ruta_detalle else None,
             )
+            # Solo se conserva el detalle de un lote terminado (no de un reintento).
+            filas_detalle.extend(lote_detalle)
         except (psycopg2.OperationalError, psycopg2.InterfaceError):
             fallos += 1
             if fallos > intentos:
@@ -314,6 +341,12 @@ def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0,
         print(f"... {resumen['vistas']} causas (hasta {ultima_causa})", file=sys.stderr, flush=True)
     if respaldo is not None:
         respaldo.close()
+    if ruta_detalle:
+        # Contiene números de causa: va a la carpeta privada, nunca a coordinación.
+        with ruta_detalle.open("w", newline="", encoding="utf-8-sig") as archivo:
+            escritor = csv.writer(archivo)
+            escritor.writerow(("numero_causa", "condicion", "fecha_condicion", "actuacion_condicion"))
+            escritor.writerows(filas_detalle)
     if resumen["filas_sin_detalle"]:
         resumen["cobertura_respaldo_pct"] = round(
             100 * resumen["filas_emparejadas"] / resumen["filas_sin_detalle"], 2
@@ -333,10 +366,13 @@ def main() -> None:
     parser.add_argument("--respaldo", type=Path,
                         help="indice_actuaciones.sqlite (scripts/indexar_respaldo_historico.py) "
                              "para leer el texto que la compactación vació")
+    parser.add_argument("--detalle", type=Path,
+                        help="CSV con la condición de cada causa (contiene números de causa: "
+                             "guardarlo en la carpeta privada) para comparar corridas por causa")
     args = parser.parse_args()
     logging.disable(logging.WARNING)
     print(json.dumps(recalcular(args.config, args.aplicar, args.limite, args.desde,
-                                ruta_respaldo=args.respaldo),
+                                ruta_respaldo=args.respaldo, ruta_detalle=args.detalle),
                      ensure_ascii=False))
 
 
