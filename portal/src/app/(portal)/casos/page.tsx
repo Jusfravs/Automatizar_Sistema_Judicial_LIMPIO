@@ -19,7 +19,11 @@ import { formatFecha, formatFechaProcesal } from '@/lib/fechas'
 import {
   CASOS_POR_PAGINA,
   COLUMNAS_EXPEDIENTE_LISTA,
+  CONDICIONES_CASO,
+  CONDICION_ETIQUETAS,
   ESTADOS_CASO,
+  esCerrada,
+  tieneAvisoCondicion,
   ESTADO_CASO_ETIQUETAS,
   escaparIlike,
   leerPagina,
@@ -47,6 +51,7 @@ const ORDEN_DEFECTO: Orden = { clave: 'actualizado', dir: 'desc' }
 type Filtros = {
   q: string
   estado: string
+  condicion: string
   fase: string
   ciudad: string
   pendientes: boolean
@@ -67,9 +72,11 @@ function textoOrden(o: Orden): string {
 
 function leerFiltros(sp: SearchParams): Filtros {
   const estado = primerValor(sp.estado)
+  const condicion = primerValor(sp.condicion)
   return {
     q: primerValor(sp.q).slice(0, 60),
     estado: ESTADOS_CASO.includes(estado) ? estado : '',
+    condicion: CONDICIONES_CASO.includes(condicion) ? condicion : '',
     fase: primerValor(sp.fase).slice(0, 80),
     ciudad: primerValor(sp.ciudad).slice(0, 60),
     pendientes: primerValor(sp.pendientes) === '1',
@@ -82,6 +89,7 @@ function urlPagina(f: Filtros, page: number): string {
   const sp = new URLSearchParams()
   if (f.q) sp.set('q', f.q)
   if (f.estado) sp.set('estado', f.estado)
+  if (f.condicion) sp.set('condicion', f.condicion)
   if (f.fase) sp.set('fase', f.fase)
   if (f.ciudad) sp.set('ciudad', f.ciudad)
   if (f.pendientes) sp.set('pendientes', '1')
@@ -120,6 +128,7 @@ async function buscarCasos(f: Filtros, fasesValidas: string[]): Promise<Resultad
 
   if (f.q) consulta = consulta.ilike('numero_causa', `%${escaparIlike(f.q)}%`)
   if (f.estado) consulta = consulta.eq('estado', f.estado)
+  if (f.condicion) consulta = consulta.eq('condicion', f.condicion)
   if (f.fase && fasesValidas.includes(f.fase)) consulta = consulta.eq('fase_actual', f.fase)
   if (f.ciudad) consulta = consulta.ilike('ciudad', `%${escaparIlike(f.ciudad)}%`)
   if (causasPendientes) consulta = consulta.in('numero_causa', causasPendientes)
@@ -134,7 +143,7 @@ async function buscarCasos(f: Filtros, fasesValidas: string[]): Promise<Resultad
   return { filas: (data ?? []) as ExpedienteLista[], total: count ?? 0, error: false }
 }
 
-function urlSin(f: Filtros, quitar: 'q' | 'estado' | 'fase' | 'ciudad' | 'pendientes'): string {
+function urlSin(f: Filtros, quitar: 'q' | 'estado' | 'condicion' | 'fase' | 'ciudad' | 'pendientes'): string {
   const sinFiltro: Filtros = { ...f, [quitar]: quitar === 'pendientes' ? false : '' }
   return urlPagina(sinFiltro, 1)
 }
@@ -193,6 +202,19 @@ function FaseEtapa({ fase, etapa }: { fase: string | null; etapa: string | null 
   )
 }
 
+/** Con condición: badge encima; si el cierre está confirmado, la fase se atenúa (es donde quedó). */
+function FaseActual({ c }: { c: ExpedienteLista }) {
+  if (!tieneAvisoCondicion(c.condicion)) return <FaseEtapa fase={c.fase_actual} etapa={c.etapa_actual} />
+  return (
+    <div className="min-w-0 space-y-1">
+      <EstadoBadge tipo="condicion" estado={c.condicion} />
+      <div className={cx(esCerrada(c.condicion) && 'opacity-60')}>
+        <FaseEtapa fase={c.fase_actual} etapa={c.etapa_actual} />
+      </div>
+    </div>
+  )
+}
+
 function columnas(f: Filtros): Columna<ExpedienteLista>[] {
   const orden = (clave: ClaveOrden) =>
     f.orden.clave === clave ? (f.orden.dir === 'asc' ? 'ascending' : 'descending') : undefined
@@ -237,7 +259,7 @@ function columnas(f: Filtros): Columna<ExpedienteLista>[] {
       encabezado: <EncabezadoOrden etiqueta="Etapa y fase actual" clave="fase" f={f} />,
       etiqueta: 'Etapa y fase actual',
       orden: orden('fase'),
-      celda: (c) => <FaseEtapa fase={c.fase_actual} etapa={c.etapa_actual} />,
+      celda: (c) => <FaseActual c={c} />,
     },
     {
       clave: 'inicio',
@@ -277,6 +299,7 @@ export default async function CasosPage({ searchParams }: { searchParams: Promis
   const chips: { clave: string; texto: string; href: string }[] = []
   if (f.q) chips.push({ clave: 'q', texto: `Causa: ${f.q}`, href: urlSin(f, 'q') })
   if (f.estado) chips.push({ clave: 'estado', texto: `Estado: ${ESTADO_CASO_ETIQUETAS[f.estado] ?? f.estado}`, href: urlSin(f, 'estado') })
+  if (f.condicion) chips.push({ clave: 'condicion', texto: `Condición: ${CONDICION_ETIQUETAS[f.condicion] ?? f.condicion}`, href: urlSin(f, 'condicion') })
   if (f.fase) chips.push({ clave: 'fase', texto: `Fase: ${f.fase}`, href: urlSin(f, 'fase') })
   if (f.ciudad) chips.push({ clave: 'ciudad', texto: `Ciudad: ${f.ciudad}`, href: urlSin(f, 'ciudad') })
   if (f.pendientes) chips.push({ clave: 'pendientes', texto: 'Con revisión pendiente', href: urlSin(f, 'pendientes') })
@@ -289,6 +312,7 @@ export default async function CasosPage({ searchParams }: { searchParams: Promis
         iniciales={{
           q: f.q,
           estado: f.estado,
+          condicion: f.condicion,
           fase: f.fase,
           ciudad: f.ciudad,
           pendientes: f.pendientes,
@@ -296,6 +320,7 @@ export default async function CasosPage({ searchParams }: { searchParams: Promis
         }}
         fases={nombresFase}
         estados={ESTADOS_CASO.map((e) => ({ valor: e, etiqueta: ESTADO_CASO_ETIQUETAS[e] ?? e }))}
+        condiciones={CONDICIONES_CASO.map((c) => ({ valor: c, etiqueta: CONDICION_ETIQUETAS[c] ?? c }))}
         hayFiltros={chips.length > 0}
       >
         <div className="space-y-4">

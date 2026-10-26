@@ -375,6 +375,8 @@ class FrenoNavegacionTests(unittest.TestCase):
             "DIAS TRANSCURRIDOS",
             "FECHA ULTIMA GESTION JUDICIAL",
             "ESTADO ULTIMA GESTION JUDICIAL",
+            "CONDICION",
+            "FECHA CONDICION",
         ])
 
     def test_normaliza_timestamp_iso_a_fecha_del_reporte(self):

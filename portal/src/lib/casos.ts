@@ -13,13 +13,13 @@ export const ACTUACIONES_POR_PAGINA = 100
 
 export type ExpedienteLista = Pick<ExpedienteRow,
   'numero_causa' | 'ciudad' | 'estado' | 'ultima_etapa' | 'ultima_fase' | 'etapa_actual' | 'fase_actual' |
-  'fecha_inicio_fase_actual' | 'actualizado_en'>
+  'fecha_inicio_fase_actual' | 'condicion' | 'actualizado_en'>
 
 export type ExpedienteDetalle = Pick<ExpedienteRow,
   'numero_causa' | 'ciudad' | 'estado' | 'ultima_etapa' | 'ultima_fase' |
   'fecha_fin_ultima_fase' | 'etapa_actual' | 'fase_actual' | 'fecha_inicio_fase_actual' |
   'mensaje_especial' | 'actor' | 'demandado' | 'tipo_accion' | 'fecha_inicio_juicio' |
-  'total_actuaciones' | 'actualizado_en'>
+  'total_actuaciones' | 'condicion' | 'fecha_condicion' | 'actuacion_condicion' | 'actualizado_en'>
 
 export type ActuacionDetalle = Pick<ActuacionRow, 'actuacion_id' | 'carpeta' | 'fecha' | 'titulo' | 'detalle'>
 export type AuditoriaDetalle = Pick<AuditoriaRow, 'id' | 'modelo' | 'estado' | 'decision_json' | 'creado_en'>
@@ -29,14 +29,58 @@ export type Etapa = Pick<EtapaRow, 'eta_id' | 'nombre'>
 export type Fase = Pick<FaseRow, 'fas_id' | 'eta_id' | 'nombre'>
 
 export const COLUMNAS_EXPEDIENTE_LISTA =
-  'numero_causa, ciudad, estado, ultima_etapa, ultima_fase, etapa_actual, fase_actual, fecha_inicio_fase_actual, actualizado_en'
+  'numero_causa, ciudad, estado, ultima_etapa, ultima_fase, etapa_actual, fase_actual, fecha_inicio_fase_actual, condicion, actualizado_en'
 export const COLUMNAS_EXPEDIENTE_DETALLE =
-  'numero_causa, ciudad, estado, ultima_etapa, ultima_fase, fecha_fin_ultima_fase, etapa_actual, fase_actual, fecha_inicio_fase_actual, mensaje_especial, actor, demandado, tipo_accion, fecha_inicio_juicio, total_actuaciones, actualizado_en'
+  'numero_causa, ciudad, estado, ultima_etapa, ultima_fase, fecha_fin_ultima_fase, etapa_actual, fase_actual, fecha_inicio_fase_actual, mensaje_especial, actor, demandado, tipo_accion, fecha_inicio_juicio, total_actuaciones, condicion, fecha_condicion, actuacion_condicion, actualizado_en'
 export const COLUMNAS_ACTUACIONES = 'actuacion_id, carpeta, fecha, titulo, detalle'
 export const COLUMNAS_AUDITORIA = 'id, modelo, estado, decision_json, creado_en'
 export const COLUMNAS_REVISION = 'estado, decision_humana, eta_id_manual, fas_id_manual, observacion, revisado_en'
 
 export const ESTADOS_CASO: readonly string[] = ['PROCESADO', 'REVISION', 'ERROR', 'ERROR_FINAL', 'EXCLUIDO_NO_CORRESPONDE']
+// Condición: eje aparte de la etapa y la fase. Una causa cerrada conserva su fase actual
+// (atenuada) para retomarla si se reactiva.
+// POR_CONFIRMAR: hay un auto de cierre pero su texto resolutivo no se pudo leer.
+export const CONDICIONES_CASO: readonly string[] = ['VIGENTE', 'ARCHIVADA', 'ABANDONADA', 'CONCLUIDA', 'POR_CONFIRMAR']
+
+export const CONDICION_ETIQUETAS: Record<string, string> = {
+  VIGENTE: 'Vigente',
+  ARCHIVADA: 'Archivada',
+  ABANDONADA: 'Abandonada',
+  CONCLUIDA: 'Concluida',
+  POR_CONFIRMAR: 'Cierre por confirmar',
+}
+
+export const CONDICION_TONOS: Record<string, Tono> = {
+  VIGENTE: 'exito',
+  ARCHIVADA: 'neutral',
+  ABANDONADA: 'atencion',
+  CONCLUIDA: 'info',
+  POR_CONFIRMAR: 'atencion',
+}
+
+/** Para contar: "3 archivadas", "1 por confirmar". */
+export function condicionEnRecuento(condicion: string, causas: number): string {
+  if (condicion === 'POR_CONFIRMAR') return 'por confirmar'
+  const etiqueta = (CONDICION_ETIQUETAS[condicion] ?? condicion).toLowerCase()
+  return causas === 1 ? etiqueta : `${etiqueta}s`
+}
+
+/** Título del aviso en el detalle de la causa. */
+export function tituloCondicion(condicion: string): string {
+  if (condicion === 'POR_CONFIRMAR') return 'Cierre por confirmar'
+  return `Causa ${(CONDICION_ETIQUETAS[condicion] ?? condicion).toLowerCase()}`
+}
+
+/** Cierre confirmado: la fase se atenúa y la causa se cuenta aparte. */
+export function esCerrada(condicion: string | null | undefined): boolean {
+  return condicion === 'ARCHIVADA' || condicion === 'ABANDONADA' || condicion === 'CONCLUIDA'
+}
+
+/** Lleva badge y aviso: cerrada o con un cierre que falta confirmar. */
+export function tieneAvisoCondicion(condicion: string | null | undefined): condicion is string {
+  return esCerrada(condicion) || condicion === 'POR_CONFIRMAR'
+}
+
 export const DECISIONES_REVISION = ['ACEPTAR_SISTEMA', 'ACEPTAR_IA', 'CORREGIR_MANUALMENTE', 'POSPONER'] as const
 export type DecisionRevision = (typeof DECISIONES_REVISION)[number]
 

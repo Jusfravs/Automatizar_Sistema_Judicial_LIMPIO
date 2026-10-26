@@ -14,6 +14,7 @@ import { clasesBoton, FOCO } from '@/components/ui/estilos'
 export type ValoresFiltro = {
   q: string
   estado: string
+  condicion: string
   fase: string
   ciudad: string
   pendientes: boolean
@@ -32,6 +33,7 @@ function construirUrl(ruta: string, v: ValoresFiltro): string {
   const sp = new URLSearchParams()
   if (v.q.trim()) sp.set('q', v.q.trim())
   if (v.estado) sp.set('estado', v.estado)
+  if (v.condicion) sp.set('condicion', v.condicion)
   if (v.fase) sp.set('fase', v.fase)
   if (v.ciudad.trim()) sp.set('ciudad', v.ciudad.trim())
   if (v.pendientes) sp.set('pendientes', '1')
@@ -50,12 +52,14 @@ export function FiltrosCasos({
   iniciales,
   fases,
   estados,
+  condiciones,
   hayFiltros,
   children,
 }: {
   iniciales: ValoresFiltro
   fases: string[]
   estados: { valor: string; etiqueta: string }[]
+  condiciones: { valor: string; etiqueta: string }[]
   hayFiltros: boolean
   /** Resultados renderizados en el servidor para los filtros confirmados. */
   children: ReactNode
@@ -69,7 +73,7 @@ export function FiltrosCasos({
   // Sin JavaScript (o antes de hidratar) el panel queda abierto: el formulario GET sigue usable.
   const hidratado = useHidratado()
   const panelId = useId()
-  const activos = [valores.q.trim(), valores.estado, valores.fase, valores.ciudad.trim(), valores.pendientes].filter(Boolean).length
+  const activos = [valores.q.trim(), valores.estado, valores.condicion, valores.fase, valores.ciudad.trim(), valores.pendientes].filter(Boolean).length
   const espera = useRef<ReturnType<typeof setTimeout> | null>(null)
   const campoCausa = useRef<HTMLInputElement>(null)
   const montado = useRef(false)
@@ -158,7 +162,7 @@ export function FiltrosCasos({
           </svg>
         </button>
         <div id={panelId} className={cx('space-y-4', hidratado && 'max-sm:pt-4', hidratado && !abiertoMovil && 'max-sm:hidden')}>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Field label="Número de causa" htmlFor="q">
               <Input
                 ref={campoCausa}
@@ -180,6 +184,16 @@ export function FiltrosCasos({
                 {estados.map((e) => (
                   <option key={e.valor} value={e.valor}>
                     {e.etiqueta}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Condición" htmlFor="condicion">
+              <Select id="condicion" name="condicion" value={valores.condicion} onChange={(e) => cambiar({ condicion: e.target.value })}>
+                <option value="">Todas</option>
+                {condiciones.map((c) => (
+                  <option key={c.valor} value={c.valor}>
+                    {c.etiqueta}
                   </option>
                 ))}
               </Select>

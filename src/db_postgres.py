@@ -84,6 +84,9 @@ class GestorPostgres:
         eta_id_actual = datos.get("eta_id ETAPA ACTUAL")
         fas_id_actual = datos.get("fas_id FASE ACTUAL")
         msg_esp = datos.get("COMENTARIO_ULTIMO") or datos.get("MENSAJE_ESPECIAL")
+        condicion = datos.get("CONDICION") or "VIGENTE"
+        fecha_condicion = datos.get("FECHA CONDICION")
+        actuacion_condicion = datos.get("ACTUACION CONDICION")
         
         actor = datos.get("ACTOR") or datos.get("DEMANDANTE")
         demandado = datos.get("DEMANDADO")
@@ -102,10 +105,12 @@ class GestorPostgres:
                     eta_id_etapa_actual, etapa_actual,
                     fas_id_fase_actual, fase_actual, fecha_inicio_fase_actual,
                     mensaje_especial, actor, demandado, tipo_accion, fecha_inicio_juicio,
-                    total_actuaciones, origen, ruta_html, datos_json, actualizado_en
+                    total_actuaciones, origen, ruta_html,
+                    condicion, fecha_condicion, actuacion_condicion,
+                    datos_json, actualizado_en
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP
                 )
                 ON CONFLICT (numero_causa) DO UPDATE SET
                     ciudad = EXCLUDED.ciudad,
@@ -129,6 +134,9 @@ class GestorPostgres:
                     origen = EXCLUDED.origen,
                     ruta_html = COALESCE(EXCLUDED.ruta_html, expedientes.ruta_html),
                     datos_json = EXCLUDED.datos_json,
+                    condicion = EXCLUDED.condicion,
+                    fecha_condicion = EXCLUDED.fecha_condicion,
+                    actuacion_condicion = EXCLUDED.actuacion_condicion,
                     actualizado_en = CURRENT_TIMESTAMP;
                 """
                 cur.execute(upsert_query, (
@@ -141,7 +149,11 @@ class GestorPostgres:
                     str(fecha_ini_act) if fecha_ini_act else None,
                     msg_esp, actor, demandado, tipo_accion,
                     str(fecha_inicio_j) if fecha_inicio_j else None,
-                    len(actuaciones), origen, ruta_html, Json(resultado)
+                    len(actuaciones), origen, ruta_html,
+                    condicion,
+                    str(fecha_condicion) if fecha_condicion else None,
+                    actuacion_condicion,
+                    Json(resultado),
                 ))
 
                 # Reemplazar actuaciones de esta causa
