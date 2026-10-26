@@ -164,6 +164,16 @@ class TestRecalcularCondicion(unittest.TestCase):
         historial = _historial_guardado(filas, "17230-2024-00013")
         self.assertNotIn("SE DISPONE", historial[0]["detalle"])
 
+    def test_razon_con_encabezado_de_hora_no_es_cuerpo(self):
+        # Revisión de Codex de f52fe7d.
+        filas = [
+            ("a1", "05/09/2025", "ARCHIVO DE LA CAUSA (AUTO INTERLOCUTORIO)", "", "C1"),
+            ("a2", "05/09/2025", "", "RAZON DE SECRETARIA, QUITO, VIERNES 5 DE SEPTIEMBRE DE 2025, "
+             "LAS 10H44. VISTOS: SE DISPONE EL ARCHIVO DE LA CAUSA", "C1"),
+        ]
+        historial = _historial_guardado(filas, "17230-2024-00016")
+        self.assertNotIn("SE DISPONE", historial[0]["detalle"])
+
     def test_auto_con_encabezado_de_fecha_y_hora_es_cuerpo(self):
         filas = [
             ("a1", "05/09/2025", "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
@@ -212,6 +222,31 @@ class TestRecalcularCondicion(unittest.TestCase):
             nueva = _condicion(filas, "17230-2024-00003", None, resumen)
         self.assertEqual(nueva["CONDICION"], "CONCLUIDA")
         self.assertEqual(resumen["sin_historial"], 0)
+
+
+class TestRutaDetalle(unittest.TestCase):
+
+    def test_rechaza_rutas_dentro_de_git(self):
+        import tempfile
+        from pathlib import Path
+        from scripts.recalcular_condicion import _validar_ruta_privada
+        with tempfile.TemporaryDirectory() as carpeta:
+            (Path(carpeta) / ".git").mkdir()
+            with self.assertRaises(RuntimeError):
+                _validar_ruta_privada(Path(carpeta) / "detalle.csv")
+
+    def test_acepta_carpeta_fuera_de_git(self):
+        import tempfile
+        from pathlib import Path
+        from scripts.recalcular_condicion import _validar_ruta_privada
+        with tempfile.TemporaryDirectory() as carpeta:
+            _validar_ruta_privada(Path(carpeta) / "detalle.csv")
+
+    def test_rechaza_carpeta_inexistente(self):
+        from pathlib import Path
+        from scripts.recalcular_condicion import _validar_ruta_privada
+        with self.assertRaises(RuntimeError):
+            _validar_ruta_privada(Path("C:/no/existe/detalle.csv"))
 
 
 if __name__ == "__main__":

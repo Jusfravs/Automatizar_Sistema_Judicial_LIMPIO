@@ -2172,13 +2172,24 @@ class MotorInferenciaProcesal:
         r"EN LA ESPECIE|EN EL PRESENTE CASO|EN TAL VIRTUD|POR LO (?:QUE|EXPUESTO)|POR TANTO"
         r"|POR ENDE|EN CONSECUENCIA|EN LO PRINCIPAL"
     )
-    # Solo retoma una cláusula que EMPIEZA con el conector o con la decisión
-    # del juez. Un verbo en presente en medio de la cláusula ("en los casos en
-    # que se declara el abandono") sigue siendo parte del supuesto legal.
+    # Tras una cita de la norma, solo estos conectores atribuyen sin duda lo
+    # que sigue al caso concreto. "Por lo que" o "por tanto" también aparecen
+    # dentro de la paráfrasis de la norma ("si transcurre el plazo, por lo que
+    # se declara el abandono, el actor puede..."), así que no bastan solos.
     PATRON_RETOMA = re.compile(
-        r"^\s*(?:Y\s+)?(?:" + _CONECTOR_RETOMA + r"|SE DECLARA|DECLARO|DECLARESE|DECLARASE"
+        r"^\s*(?:Y\s+)?(?:EN LA ESPECIE|EN EL PRESENTE CASO|EN TAL VIRTUD|POR LO EXPUESTO"
+        r"|EN CONSECUENCIA|EN LO PRINCIPAL)\b"
+    )
+    # Conector débil o decisión al inicio de la cláusula: retoma el caso solo
+    # si la cláusula nombra la causa concreta. Si no, queda dentro de la cita.
+    PATRON_RETOMA_DEBIL = re.compile(
+        r"^\s*(?:Y\s+)?(?:POR LO QUE|POR TANTO|POR ENDE|SE DECLARA|DECLARO|DECLARESE|DECLARASE"
         r"|SE DISPONE|DISPONGO|DISPONGASE|SE ORDENA|ORDENO|ARCHIVESE|ARCHIVASE|SE ARCHIVA"
         r"|SE APRUEBA|APRUEBO|SE HOMOLOGA|HOMOLOGO)\b"
+    )
+    PATRON_REFERENCIA_CASO = re.compile(
+        r"\b(?:(?:LA|EL|ESTA|ESTE) PRESENTE (?:CAUSA|PROCESO|JUICIO|DEMANDA|ACCION)"
+        r"|ESTA CAUSA|ESTE PROCESO|ESTE JUICIO|EN LA ESPECIE|EN EL PRESENTE CASO)\b"
     )
     PATRON_NEGACION_ORACION = re.compile(
         r"\b(?:NIEGA\w*|NIEGUESE|RECHAZA\w*|RECHACESE|DESECHA\w*|NO HA LUGAR|NO PROCEDE"
@@ -2254,10 +2265,12 @@ class MotorInferenciaProcesal:
         """Quita de la oración lo que cita la norma o plantea un supuesto.
 
         Se descartan el texto entre comillas y, por cláusulas separadas por
-        comas, la que cita la norma y las que la continúan hasta que el juez
-        retoma el caso ("EN LA ESPECIE", "POR LO QUE", "SE DECLARA"...). Así
-        «el art. 245 dispone que el juzgador declarará el abandono, por lo que
-        se declara el abandono» conserva solo su decisión.
+        comas o por un conector, la que cita la norma y las que la continúan
+        hasta que el juez retoma el caso sin duda: con "EN LA ESPECIE", "EN
+        TAL VIRTUD"..., o con "POR LO QUE"/"SE DECLARA" si la cláusula nombra
+        la causa concreta. Así «el art. 245 dispone que el juzgador declarará
+        el abandono, por lo que se declara el abandono de la presente causa»
+        conserva su decisión, y un supuesto de la norma queda por confirmar.
         """
         oracion = re.sub(r"\"[^\"]*\"|“[^”]*”", " ", oracion)
         clausulas = []
@@ -2267,7 +2280,11 @@ class MotorInferenciaProcesal:
             if cls.PATRON_NORMA.search(clausula):
                 en_norma = True
                 continue
-            if en_norma and not cls.PATRON_RETOMA.search(clausula):
+            if en_norma and not (
+                cls.PATRON_RETOMA.search(clausula)
+                or (cls.PATRON_RETOMA_DEBIL.search(clausula)
+                    and cls.PATRON_REFERENCIA_CASO.search(clausula))
+            ):
                 continue
             en_norma = False
             clausulas.append(clausula)

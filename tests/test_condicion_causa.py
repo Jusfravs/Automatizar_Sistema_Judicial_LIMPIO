@@ -63,7 +63,7 @@ class TestCondicionCausa(unittest.TestCase):
         r = inferir(BASE + [
             {"fecha": "05/09/2025", "titulo": "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
              "detalle": "VISTOS: EL ARTICULO 245 DEL COGEP DISPONE QUE EL JUZGADOR DECLARARA EL ABANDONO, "
-                        "POR LO QUE SE DECLARA EL ABANDONO DE LA INSTANCIA"},
+                        "POR LO QUE SE DECLARA EL ABANDONO DE LA PRESENTE CAUSA"},
         ])
         self.assertEqual(r.get("CONDICION"), "ABANDONADA")
 
@@ -71,7 +71,35 @@ class TestCondicionCausa(unittest.TestCase):
         r = inferir(BASE + [
             {"fecha": "05/09/2025", "titulo": "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
              "detalle": "VISTOS: EL ARTICULO 245 DEL COGEP DISPONE QUE EL JUZGADOR DECLARARA EL ABANDONO "
+                        "POR LO QUE SE DECLARA EL ABANDONO DE LA PRESENTE CAUSA"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "ABANDONADA")
+
+    def test_conector_debil_sin_referencia_al_caso_queda_por_confirmar(self):
+        # Ante la duda: "por lo que" puede seguir dentro de la cita.
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
+             "detalle": "VISTOS: EL ARTICULO 245 DEL COGEP DISPONE QUE EL JUZGADOR DECLARARA EL ABANDONO, "
                         "POR LO QUE SE DECLARA EL ABANDONO DE LA INSTANCIA"},
+        ])
+        self.assertEqual(r.get("CONDICION"), "POR_CONFIRMAR")
+
+    def test_conector_dentro_de_la_parafrasis_no_cierra(self):
+        # Revisión de Codex de f52fe7d.
+        for separador in (", ", " "):
+            r = inferir(BASE + [
+                {"fecha": "05/09/2025", "titulo": "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
+                 "detalle": "VISTOS: EL ARTICULO 245 DISPONE QUE SI TRANSCURRE EL PLAZO SIN IMPULSO"
+                            + separador + "POR LO QUE SE DECLARA EL ABANDONO DE LA CAUSA, "
+                            "EL ACTOR PUEDE PRESENTAR UNA NUEVA DEMANDA"},
+            ])
+            self.assertEqual(r.get("CONDICION"), "POR_CONFIRMAR", separador)
+
+    def test_conector_fuerte_tras_la_cita_retoma_el_caso(self):
+        r = inferir(BASE + [
+            {"fecha": "05/09/2025", "titulo": "ABANDONO POR FALTA DE IMPULSO PROCESAL ART. 245 (AUTO INTERLOCUTORIO)",
+             "detalle": "VISTOS: EL ARTICULO 245 DISPONE QUE EL JUZGADOR DECLARARA EL ABANDONO, "
+                        "EN TAL VIRTUD SE DECLARA EL ABANDONO DE LA INSTANCIA"},
         ])
         self.assertEqual(r.get("CONDICION"), "ABANDONADA")
 

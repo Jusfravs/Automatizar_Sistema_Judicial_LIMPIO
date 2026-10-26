@@ -117,7 +117,9 @@ def _unir_cuerpos(historial: list[dict], resumen=None) -> list[dict]:
         # incidente, así que no se compara solo el prefijo.
         clave = (act["fecha"], act.get("ORIGEN_CARPETA"))
         rotulo = normalizar_texto(act["titulo"])
-        if not act["titulo"] and _PATRON_CUERPO_AUTO.match(normalizar_texto(act["detalle"])):
+        cuerpo = normalizar_texto(act["detalle"])
+        if (not act["titulo"] and _PATRON_CUERPO_AUTO.match(cuerpo)
+                and not _PATRON_NO_ES_AUTO.match(cuerpo)):
             textos = cuerpos.setdefault(clave, [])
             if act["detalle"] not in textos:
                 textos.append(act["detalle"])
@@ -147,7 +149,13 @@ def _unir_cuerpos(historial: list[dict], resumen=None) -> list[dict]:
 # fecha y hora («QUITO, LUNES 15 DE DICIEMBRE DEL 2025, LAS 10H44.»). Una
 # razón o constancia que transcribe otro auto no empieza así.
 _PATRON_CUERPO_AUTO = re.compile(
-    r"^\s*(?:[^.:]{0,160}?\b\d{1,2}\s*H\s*\d{2}\b[^.:]{0,40}[.:-]+\s*)?VISTOS\b"
+    r"^\s*(?:(?:EN\s+)?[A-Z][A-Z ]{1,40},\s*"
+    r"(?:LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)\b"
+    r"[^.:]{0,120}?\b\d{1,2}\s*H\s*\d{2}\b[^.:]{0,40}[.:-]+\s*)?VISTOS\b"
+)
+# Lo que da cuenta de un auto sin ser el auto: razones, constancias, notificaciones.
+_PATRON_NO_ES_AUTO = re.compile(
+    r"^\s*(?:RAZON|CONSTANCIA|CERTIFICO|NOTIFICACION|NOTIFICO|OFICIO|SIENTO)\b"
 )
 # Un rótulo de SATJE: texto corto con el tipo de providencia entre paréntesis.
 _PATRON_SOLO_ROTULO = re.compile(r"^[^()]{0,160}\([^)]*\)\s*$")
@@ -285,6 +293,18 @@ def _procesar_lote(repo, aplicar, columna, desde, tamano, resumen, respaldo=None
         conn.close()
 
 
+def _validar_ruta_privada(ruta: Path) -> None:
+    """El detalle lleva números de causa: nunca dentro de un repositorio Git.
+
+    Se comprueba antes de leer causas, para no procesar 2.000 y fallar al final.
+    """
+    destino = ruta.resolve()
+    if not destino.parent.is_dir():
+        raise RuntimeError(f"DETALLE_SIN_CARPETA: {destino.parent}")
+    if any((carpeta / ".git").exists() for carpeta in (destino.parent, *destino.parents)):
+        raise RuntimeError("DETALLE_DENTRO_DE_GIT: guárdelo en la carpeta privada del servidor")
+
+
 def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0,
                desde: str = "", intentos: int = 5, ruta_respaldo: Path | None = None,
                ruta_detalle: Path | None = None) -> dict:
@@ -306,6 +326,8 @@ def recalcular(config_path: Path, aplicar: bool = False, limite: int = 0,
             con_columna = cursor.fetchone() is not None
     finally:
         conn.close()
+    if ruta_detalle:
+        _validar_ruta_privada(ruta_detalle)
     if aplicar and not con_columna:
         raise RuntimeError("FALTA_MIGRACION_005_CONDICION")
     if aplicar and respaldo is None:
