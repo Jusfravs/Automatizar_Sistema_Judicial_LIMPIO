@@ -16,12 +16,14 @@ import {
 } from '@/components/ui'
 import { calcularAvance, COLUMNAS_ESTADO_EJECUCION, ESTADOS_ACTIVOS, type EstadoEjecucion } from '@/lib/lotes'
 import { formatFecha } from '@/lib/fechas'
+import { leerConfigIa } from '@/lib/configIa'
 import { leerEstadoServidor } from '@/lib/servidor'
 import { FOCO } from '@/components/ui/estilos'
 import { cx } from '@/lib/cx'
 import { ADELANTE, NAVEGACION } from '@/lib/transiciones'
 import type { Tono } from '@/lib/tonos'
 import RefrescoInicio from './RefrescoInicio'
+import { ConfigIa } from './ConfigIa'
 import { PulsoServidor } from './PulsoServidor'
 import { TrazoEnCurso } from './TrazoEnCurso'
 import { PanoramaCartera, type DiaActividad, type EtapaResumen } from './PanoramaCartera'
@@ -225,13 +227,14 @@ async function consultarPanorama(supabase: Supabase) {
 /** Todas las consultas del resumen con un mismo instante de referencia (fuera del render). */
 async function consultarResumen(supabase: Supabase) {
   const ahora = Date.now()
-  const [conteos, enCurso, servidor, panorama] = await Promise.all([
+  const [conteos, enCurso, servidor, panorama, configIa] = await Promise.all([
     contarIndicadores(supabase, ahora),
     lotesEnCurso(supabase, ahora),
     leerEstadoServidor(supabase, ahora),
     consultarPanorama(supabase),
+    leerConfigIa(supabase),
   ])
-  return { conteos, enCurso, servidor, panorama, ahora, consultadoEn: new Date(ahora).toISOString() }
+  return { conteos, enCurso, servidor, panorama, configIa, ahora, consultadoEn: new Date(ahora).toISOString() }
 }
 
 export default async function InicioPage() {
@@ -241,6 +244,7 @@ export default async function InicioPage() {
     enCurso,
     servidor,
     panorama,
+    configIa,
     ahora,
     consultadoEn,
   } = await consultarResumen(supabase)
@@ -264,6 +268,7 @@ export default async function InicioPage() {
 
       <div className="space-y-3">
         <PulsoServidor inicial={servidor} instanteServidor={ahora} />
+        <ConfigIa config={configIa} />
         <RefrescoInicio consultadoEn={consultadoEn} />
       </div>
 
