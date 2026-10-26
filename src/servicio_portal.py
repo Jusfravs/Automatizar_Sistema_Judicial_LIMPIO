@@ -303,17 +303,33 @@ class RepositorioSolicitudes:
         )
         return bool(fila and fila["cancelar"])
 
-    def registrar_latido(self, worker_host: str, estado: str, solicitud_id: str | None) -> None:
+    def registrar_latido(self, worker_host: str, estado: str, solicitud_id: str | None,
+                         config_ia: dict | None = None) -> None:
+        if config_ia is None:
+            self._ejecutar(
+                """
+                INSERT INTO public.servicio_latido (worker_host, estado, solicitud_id)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (worker_host) DO UPDATE
+                   SET estado = EXCLUDED.estado,
+                       solicitud_id = EXCLUDED.solicitud_id,
+                       latido_en = now()
+                """,
+                (worker_host, estado, solicitud_id),
+            )
+            return
+        # Requiere migrations/supabase/014_latido_config_ia.sql.
         self._ejecutar(
             """
-            INSERT INTO public.servicio_latido (worker_host, estado, solicitud_id)
-            VALUES (%s, %s, %s)
+            INSERT INTO public.servicio_latido (worker_host, estado, solicitud_id, config_ia)
+            VALUES (%s, %s, %s, %s::jsonb)
             ON CONFLICT (worker_host) DO UPDATE
                SET estado = EXCLUDED.estado,
                    solicitud_id = EXCLUDED.solicitud_id,
+                   config_ia = EXCLUDED.config_ia,
                    latido_en = now()
             """,
-            (worker_host, estado, solicitud_id),
+            (worker_host, estado, solicitud_id, json.dumps(config_ia)),
         )
 
     def cerrar_interrumpidas(self, worker_host: str) -> int:
@@ -330,6 +346,23 @@ class RepositorioSolicitudes:
         )
 
 
+def resumen_config_ia(config: dict) -> dict:
+    """Configuración de IA que el portal muestra en Inicio. Nunca incluye claves.
+
+    Solo se copian estas claves conocidas; ``api_key_env`` y cualquier otra
+    quedan fuera aunque se agreguen a la configuración.
+    """
+    ia = config.get("inferencia_ia") or {}
+    return {
+        "modo": str(ia.get("modo") or "apagado"),
+        "jerarquia": str(ia.get("jerarquia") or "motor"),
+        "sombra_en_lote": ia.get("sombra_en_lote") is True,
+        "incluir_texto": ia.get("incluir_texto") is True,
+        "proveedor": str(ia.get("proveedor") or ""),
+        "modelo": str(ia.get("modelo") or ""),
+    }
+
+
 class Latido:
     """Publica que el servicio sigue vivo, también mientras corre un lote de horas.
 
@@ -337,9 +370,11 @@ class Latido:
     se registra y se reintenta en el siguiente ciclo, nunca detiene el servicio.
     """
 
-    def __init__(self, solicitudes, worker_host: str, intervalo: float = 10.0, reloj=monotonic):
+    def __init__(self, solicitudes, worker_host: str, intervalo: float = 10.0, reloj=monotonic,
+                 config_ia: dict | None = None):
         self.solicitudes = solicitudes
         self.worker_host = worker_host
+        self.config_ia = config_ia
         self.intervalo = intervalo
         self.reloj = reloj
         self.estado = "ESPERANDO"
@@ -364,7 +399,9 @@ class Latido:
             logger.error("[PORTAL] El bucle del servicio no avanza; se suspende el latido.")
             return
         try:
-            self.solicitudes.registrar_latido(self.worker_host, self.estado, self.solicitud_id)
+            extra = {"config_ia": self.config_ia} if self.config_ia is not None else {}
+            self.solicitudes.registrar_latido(self.worker_host, self.estado, self.solicitud_id,
+                                              **extra)
         except Exception:
             logger.warning("[PORTAL] No se pudo registrar el latido del servicio.", exc_info=True)
 
@@ -436,7 +473,7 @@ def _resumen_estadisticas(estadisticas: dict | None) -> str:
 class ServicioPortal:
     def __init__(self, solicitudes, storage, *, preparar_lote, ejecutar_lote, directorio: Path,
                  worker_host: str, intervalo: float = 10.0, intervalo_cancelacion: float = 5.0,
-                 interrumpir=_thread.interrupt_main):
+                 interrumpir=_thread.interrupt_main, config_ia: dict | None = None):
         self.solicitudes = solicitudes
         self.storage = storage
         self.preparar_lote = preparar_lote
@@ -446,7 +483,7 @@ class ServicioPortal:
         self.intervalo = intervalo
         self.intervalo_cancelacion = intervalo_cancelacion
         self.interrumpir = interrumpir
-        self.latido = Latido(solicitudes, worker_host, intervalo)
+        self.latido = Latido(solicitudes, worker_host, intervalo, config_ia=config_ia)
 
     def atender_una(self) -> bool:
         solicitud = self.solicitudes.reservar(self.worker_host)
@@ -653,6 +690,7 @@ def ejecutar_servicio(ruta_config: Path, *, intervalo: int = 10, una_vez: bool =
         directorio=RAIZ / "outputs" / "portal",
         worker_host=socket.gethostname()[:120],
         intervalo=intervalo,
+        config_ia=resumen_config_ia(config),
     )
     servicio.ejecutar(una_vez=una_vez)
     return 0

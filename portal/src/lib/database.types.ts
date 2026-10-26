@@ -813,6 +813,7 @@ export type Database = {
       }
       servicio_latido: {
         Row: {
+          config_ia: Json | null
           estado: string
           iniciado_en: string
           latido_en: string
@@ -820,6 +821,7 @@ export type Database = {
           worker_host: string
         }
         Insert: {
+          config_ia?: Json | null
           estado: string
           iniciado_en?: string
           latido_en?: string
@@ -827,6 +829,7 @@ export type Database = {
           worker_host: string
         }
         Update: {
+          config_ia?: Json | null
           estado?: string
           iniciado_en?: string
           latido_en?: string

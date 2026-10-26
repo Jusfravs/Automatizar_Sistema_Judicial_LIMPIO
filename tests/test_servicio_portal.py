@@ -22,6 +22,7 @@ from src.servicio_portal import (
     VigilanteCancelacion,
     aplicar_filtros,
     codigo_publico,
+    resumen_config_ia,
     verificar_excel_seguro,
 )
 
@@ -247,6 +248,20 @@ class TestRepositorioSolicitudes(unittest.TestCase):
         sql = self.cursor.execute.call_args.args[0]
         self.assertIn("FOR UPDATE SKIP LOCKED", sql)
         self.assertIn("NOT cancelar", sql)
+
+    def test_latido_sin_config_ia_no_toca_la_columna_nueva(self):
+        # Compatible con una base sin la migración 014.
+        self.repositorio.registrar_latido("servidor", "ESPERANDO", None)
+        sql, parametros = self.cursor.execute.call_args.args
+        self.assertNotIn("config_ia", sql)
+        self.assertEqual(parametros, ("servidor", "ESPERANDO", None))
+
+    def test_latido_con_config_ia_la_guarda_como_json(self):
+        config = {"modo": "sombra", "jerarquia": "motor"}
+        self.repositorio.registrar_latido("servidor", "ESPERANDO", None, config_ia=config)
+        sql, parametros = self.cursor.execute.call_args.args
+        self.assertIn("config_ia = EXCLUDED.config_ia", sql)
+        self.assertEqual(json.loads(parametros[-1]), config)
 
     def test_consulta_lenta_registra_duracion_sin_parametros(self):
         with patch("src.servicio_portal.monotonic", side_effect=[0, 2.5]), \
@@ -510,12 +525,36 @@ class TestServicioPortal(unittest.TestCase):
         latido.latir()
         self.assertEqual(solicitudes.latidos[-1], ("servidor", "PROCESANDO", "abc"))
 
+    def test_latido_envia_la_config_ia_si_la_tiene(self):
+        solicitudes = MagicMock()
+        Latido(solicitudes, "servidor", config_ia={"modo": "sombra"}).latir()
+        self.assertEqual(solicitudes.registrar_latido.call_args.kwargs, {"config_ia": {"modo": "sombra"}})
+
     def test_falla_del_latido_no_detiene_el_lote(self):
         (self.lote / "reporte_final.xlsx").write_bytes(b"final")
         solicitudes = SolicitudesFalsas([solicitud()])
         solicitudes.registrar_latido = MagicMock(side_effect=RuntimeError("BD_CAIDA"))
         self.servicio(solicitudes).atender_una()
         self.assertEqual(solicitudes.final["estado"], "COMPLETADA")
+
+
+class TestResumenConfigIA(unittest.TestCase):
+    def test_nunca_incluye_claves(self):
+        resumen = resumen_config_ia({"inferencia_ia": {
+            "modo": "sombra", "proveedor": "nvidia", "modelo": "m", "api_key_env": "NVIDIA_API_KEY",
+            "api_key": "secreto", "jerarquia": "ia_primero", "sombra_en_lote": True,
+        }})
+        self.assertNotIn("secreto", json.dumps(resumen))
+        self.assertNotIn("NVIDIA_API_KEY", json.dumps(resumen))
+        self.assertEqual(set(resumen), {"modo", "jerarquia", "sombra_en_lote", "incluir_texto",
+                                        "proveedor", "modelo"})
+        self.assertEqual(resumen["jerarquia"], "ia_primero")
+        self.assertTrue(resumen["sombra_en_lote"])
+
+    def test_sin_seccion_de_ia_queda_apagado_y_manda_el_motor(self):
+        resumen = resumen_config_ia({})
+        self.assertEqual((resumen["modo"], resumen["jerarquia"]), ("apagado", "motor"))
+        self.assertFalse(resumen["sombra_en_lote"] or resumen["incluir_texto"])
 
 
 class TestVerificarExcelSeguro(unittest.TestCase):
